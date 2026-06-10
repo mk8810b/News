@@ -134,7 +134,11 @@
 
 <script>
 const KEY = "news-app-v1";
-const PROXY = u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u);
+const PROXIES = [
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+  u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
+];
 const GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
 
 const DEFAULT_FEEDS = [
@@ -224,16 +228,20 @@ function parseFeed(xmlText, feed){
 }
 async function fetchFeed(feed){
   feedStatus[feed.id]="loading"; renderFeeds();
-  try{
-    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),15000);
-    const res=await fetch(PROXY(feed.url),{signal:ctrl.signal});
-    clearTimeout(t);
-    if(!res.ok) throw 0;
-    const items=parseFeed(await res.text(), feed);
-    if(!items.length) throw 0;
-    feedStatus[feed.id]="ok";
-    return items;
-  }catch(e){ feedStatus[feed.id]="fail"; return []; }
+  for(const proxy of PROXIES){
+    try{
+      const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),12000);
+      const res=await fetch(proxy(feed.url),{signal:ctrl.signal});
+      clearTimeout(t);
+      if(!res.ok) continue;
+      const items=parseFeed(await res.text(), feed);
+      if(!items.length) continue;
+      feedStatus[feed.id]="ok";
+      return items;
+    }catch(e){ /* 次のプロキシへ */ }
+  }
+  feedStatus[feed.id]="fail";
+  return [];
 }
 async function refresh(){
   const btn=document.getElementById("refresh");
