@@ -32,11 +32,12 @@
   .learn { font-size:11px; color:var(--dim); }
   .learn b { color:var(--accent); font-weight:600; }
   .badge {
-    display:none; width:fit-content; margin:8px 0 0; padding:3px 11px;
-    border-radius:99px; font-size:11px;
+    display:none; position:fixed; bottom:max(20px, env(safe-area-inset-bottom));
+    left:50%; transform:translateX(-50%); z-index:99;
+    padding:8px 16px; border-radius:99px; font-size:12px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.5);
   }
-  .badge.ok    { display:block; background:rgba(91,179,133,0.13); color:var(--pos); border:1px solid rgba(91,179,133,0.3); }
-  .badge.error { display:block; background:rgba(208,96,79,0.15);  color:var(--neg); border:1px solid rgba(208,96,79,0.35); }
+  .badge.error { display:block; background:#2A1714; color:var(--neg); border:1px solid rgba(208,96,79,0.5); }
   .chips { display:flex; gap:7px; overflow-x:auto; padding:14px 0 4px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .chips::-webkit-scrollbar { display:none; }
   .chip {
@@ -93,6 +94,15 @@
     color:#1A1408; font-size:14px; font-weight:700; cursor:pointer;
   }
   .io { display:flex; gap:8px; margin-top:18px; }
+  .res-row { display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid rgba(42,50,59,0.5); }
+  .res-row .info { flex:1; min-width:0; }
+  .res-row .t { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .res-row .m { font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+  .res-row .addF {
+    flex:0 0 auto; padding:8px 14px; border-radius:9px; font-size:12px; font-weight:700;
+    border:none; background:var(--accent); color:#1A1408; cursor:pointer;
+  }
+  .res-row .addF:disabled { background:var(--edge); color:var(--dim); }
   .io button {
     flex:1; padding:10px 0; border-radius:9px; font-size:12px;
     border:1px solid var(--edge); background:transparent; color:var(--dim); cursor:pointer;
@@ -119,6 +129,12 @@
   <button class="mgr-toggle" id="mgrToggle">▸ フィード管理</button>
   <div id="mgrBody" style="display:none">
     <div id="feedList"></div>
+    <div class="add" style="margin-top:16px">
+      <select id="searchGenre"></select>
+      <input type="text" id="q" placeholder="キーワード または サイトURLで検索">
+      <button id="searchBtn">フィードを検索</button>
+    </div>
+    <div id="searchResults"></div>
     <div class="add">
       <select id="addGenre"></select>
       <input type="text" id="addName" placeholder="フィード名（例: GIGAZINE）">
@@ -161,13 +177,19 @@ let S = {
   feeds: DEFAULT_FEEDS.map((f,i)=>({ id:"d"+i, ...f })),
   model: { like:{}, dis:{}, likeN:0, disN:0 },
   rated: {},            // hash -> 1
+  saved: [],            // ◎を付けた記事の保存リスト
 };
 let articles = [];      // {hash,title,link,date,genre,source,score}
 let feedStatus = {};    // feedId -> ok|fail|loading
 let activeGenre = "すべて";
 
 // ── storage ──
-function showBadge(t, ok){ const b=document.getElementById("badge"); b.textContent=t; b.className="badge "+(ok?"ok":"error"); clearTimeout(showBadge._t); showBadge._t=setTimeout(()=>b.className="badge",2500); }
+function showBadge(t, ok){
+  if(ok) return; // 成功時は無表示。失敗時のみ画面下部に通知
+  const b=document.getElementById("badge");
+  b.textContent=t; b.className="badge error";
+  clearTimeout(showBadge._t); showBadge._t=setTimeout(()=>b.className="badge",3000);
+}
 function load(){ try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); } }
 function save(){
   try{
@@ -269,14 +291,31 @@ function setStatus(t){ document.getElementById("status").textContent=t; }
 function esc(s){ return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function renderChips(){
   const c=document.getElementById("chips");
-  c.innerHTML=["すべて",...GENRES].map(g=>
+  c.innerHTML=["すべて",...GENRES,"★保存済み"].map(g=>
     `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}</button>`).join("");
   c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ activeGenre=b.dataset.g; renderChips(); renderList(); });
 }
 function renderList(){
   const list=document.getElementById("list");
-  const view=articles.filter(a=>activeGenre==="すべて"||a.genre===activeGenre);
   document.getElementById("nRated").textContent=S.model.likeN+S.model.disN;
+  if(activeGenre==="★保存済み"){
+    if(!S.saved.length){ list.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
+    list.innerHTML=S.saved.map((a,i)=>`
+      <div class="art">
+        <div class="top">
+          <div style="flex:1">
+            <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+            <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+          </div>
+          <button class="del" data-i="${i}" style="background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:2px 6px">×</button>
+        </div>
+      </div>`).join("");
+    list.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
+      S.saved.splice(Number(b.dataset.i),1); save(); renderList();
+    });
+    return;
+  }
+  const view=articles.filter(a=>activeGenre==="すべて"||a.genre===activeGenre);
   if(!view.length){ list.innerHTML='<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。</div>'; return; }
   list.innerHTML=view.slice(0,60).map(a=>`
     <div class="art" data-h="${a.hash}">
@@ -302,6 +341,7 @@ function rate(h, like){
   const a=articles.find(x=>x.hash===h); if(!a) return;
   train(a.title, like);
   S.rated[h]=1;
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
   articles=articles.filter(x=>x.hash!==h);
   articles.forEach(x=>x.score=scoreOf(x.title));
   articles.sort((a,b)=>b.score-a.score);
@@ -329,6 +369,78 @@ document.getElementById("mgrToggle").onclick=()=>{
   document.getElementById("mgrToggle").textContent=(open?"▾":"▸")+" フィード管理";
 };
 document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+
+// ── feed search ──
+async function feedlySearch(q){
+  const url="https://cloud.feedly.com/v3/search/feeds?count=12&locale=ja&query="+encodeURIComponent(q);
+  const tries=[u=>u, ...PROXIES];
+  for(const p of tries){
+    try{
+      const res=await fetch(p(url)); if(!res.ok) continue;
+      const j=await res.json();
+      if(!j.results) continue;
+      return j.results.map(r=>({
+        title:(r.title||r.website||"無題"),
+        url:(r.feedId||"").replace(/^feed\//,""),
+        meta:(r.website||"")+(r.subscribers?` ・ 読者${r.subscribers.toLocaleString()}`:""),
+      })).filter(r=>/^https?:/.test(r.url));
+    }catch(e){}
+  }
+  return null;
+}
+async function discoverFromSite(siteUrl){
+  if(!/^https?:\/\//.test(siteUrl)) siteUrl="https://"+siteUrl;
+  for(const p of PROXIES){
+    try{
+      const res=await fetch(p(siteUrl)); if(!res.ok) continue;
+      const doc=new DOMParser().parseFromString(await res.text(),"text/html");
+      const links=[...doc.querySelectorAll('link[rel="alternate"]')]
+        .filter(l=>/rss|atom|xml/i.test(l.getAttribute("type")||""));
+      const out=[];
+      for(const l of links){
+        try{ out.push({ title:l.getAttribute("title")||"検出されたフィード",
+                        url:new URL(l.getAttribute("href"),siteUrl).href, meta:siteUrl }); }catch(e){}
+      }
+      if(out.length) return out;
+      const base=siteUrl.replace(/\/+$/,"");
+      return ["/feed","/rss","/atom.xml","/index.rdf","/feed.xml"]
+        .map(s=>({ title:"パス候補: "+s, url:base+s, meta:"自動検出失敗のため推測。追加後に●で生死確認" }));
+    }catch(e){}
+  }
+  return null;
+}
+function renderResults(results){
+  const el=document.getElementById("searchResults");
+  if(!results){ el.innerHTML='<div class="empty" style="padding:16px 0">検索に失敗した。時間を置いて再試行しろ。</div>'; return; }
+  if(!results.length){ el.innerHTML='<div class="empty" style="padding:16px 0">該当するフィードが見つからない。</div>'; return; }
+  const existing=new Set(S.feeds.map(f=>f.url));
+  el.innerHTML=results.map((r,i)=>`
+    <div class="res-row">
+      <div class="info">
+        <div class="t">${esc(r.title)}</div>
+        <div class="m">${esc(r.meta||r.url)}</div>
+      </div>
+      <button class="addF" data-i="${i}" ${existing.has(r.url)?"disabled":""}>${existing.has(r.url)?"追加済":"追加"}</button>
+    </div>`).join("");
+  el.querySelectorAll(".addF").forEach(b=>b.onclick=()=>{
+    const r=results[Number(b.dataset.i)];
+    S.feeds.push({ id:"u"+Date.now(), genre:document.getElementById("searchGenre").value,
+                   name:r.title.slice(0,30), url:r.url });
+    save(); renderFeeds();
+    b.disabled=true; b.textContent="追加済";
+  });
+}
+document.getElementById("searchBtn").onclick=async()=>{
+  const q=document.getElementById("q").value.trim();
+  if(!q) return;
+  const btn=document.getElementById("searchBtn");
+  btn.disabled=true; btn.textContent="検索中…";
+  const isUrl=/^(https?:\/\/|[\w-]+\.[\w.-]+\/?)/.test(q)&&q.includes(".")&&!q.includes(" ");
+  const results=isUrl?await discoverFromSite(q):await feedlySearch(q);
+  renderResults(results);
+  btn.disabled=false; btn.textContent="フィードを検索";
+};
 document.getElementById("addBtn").onclick=()=>{
   const g=document.getElementById("addGenre").value;
   const n=document.getElementById("addName").value.trim();
