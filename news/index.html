@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#101418">
+<title>Feed</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23101418'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23E0A435'%3E◎%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --ink: #101418;
+    --card: #1A2026;
+    --edge: #2A323B;
+    --paper: #E8E4DA;
+    --dim: rgba(232,228,218,0.5);
+    --accent: #E0A435;
+    --pos: #5BB385;
+    --neg: #D0604F;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    background: var(--ink); color: var(--paper);
+    font-family: -apple-system,'Hiragino Sans',sans-serif;
+    padding: max(24px, env(safe-area-inset-top)) 14px 60px;
+    max-width: 560px; margin: 0 auto;
+  }
+  header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px; }
+  h1 { font-family: Georgia,'Hiragino Mincho ProN',serif; font-size:26px; letter-spacing:0.02em; }
+  h1 span { color: var(--accent); }
+  .learn { font-size:11px; color:var(--dim); }
+  .learn b { color:var(--accent); font-weight:600; }
+  .badge {
+    display:none; position:fixed; bottom:max(20px, env(safe-area-inset-bottom));
+    left:50%; transform:translateX(-50%); z-index:99;
+    padding:8px 16px; border-radius:99px; font-size:12px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.5);
+  }
+  .badge.error { display:block; background:#2A1714; color:var(--neg); border:1px solid rgba(208,96,79,0.5); }
+  .chips { display:flex; gap:7px; overflow-x:auto; padding:14px 0 4px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .chips::-webkit-scrollbar { display:none; }
+  .chip {
+    flex:0 0 auto; padding:7px 14px; border-radius:99px; font-size:13px;
+    border:1px solid var(--edge); background:transparent; color:var(--dim); cursor:pointer;
+  }
+  .chip.on { background:var(--accent); color:#1A1408; border-color:var(--accent); font-weight:600; }
+  .bar { display:flex; gap:8px; margin:12px 0 4px; }
+  .bar button {
+    flex:1; padding:12px 0; border-radius:10px; font-size:14px; font-weight:600;
+    border:1px solid var(--edge); background:var(--card); color:var(--paper); cursor:pointer;
+  }
+  .bar button.primary { background:var(--accent); color:#1A1408; border-color:var(--accent); }
+  .bar button:disabled { opacity:0.4; }
+  .status { font-size:11px; color:var(--dim); margin:8px 2px; min-height:14px; }
+  .art {
+    background:var(--card); border:1px solid var(--edge); border-radius:13px;
+    padding:13px 14px 11px; margin-top:9px;
+  }
+  .art .top { display:flex; gap:10px; align-items:flex-start; }
+  .score {
+    flex:0 0 auto; min-width:44px; text-align:center;
+    font-family:Georgia,serif; font-size:17px; font-weight:700;
+    color:var(--accent); padding-top:1px; font-variant-numeric:tabular-nums;
+  }
+  .score small { display:block; font-family:-apple-system,sans-serif; font-size:9px; color:var(--dim); font-weight:400; letter-spacing:0.1em; }
+  .art a { color:var(--paper); text-decoration:none; font-size:15px; line-height:1.45; font-weight:500; display:block; }
+  .art .sub { font-size:11px; color:var(--dim); margin-top:5px; }
+  .art .sub .genre { color:var(--accent); }
+  .acts { display:flex; gap:8px; margin-top:10px; }
+  .acts button {
+    flex:1; padding:9px 0; border-radius:9px; font-size:13px; font-weight:600;
+    border:1px solid var(--edge); background:transparent; cursor:pointer;
+  }
+  .acts .yes { color:var(--pos); border-color:rgba(91,179,133,0.4); }
+  .acts .no  { color:var(--dim); }
+  .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
+  /* feed manager */
+  .mgr { margin-top:26px; border-top:1px solid var(--edge); padding-top:14px; }
+  .mgr-toggle { background:none; border:none; color:var(--dim); font-size:13px; cursor:pointer; padding:6px 2px; }
+  .feed-row { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(42,50,59,0.5); font-size:13px; }
+  .dot { flex:0 0 8px; width:8px; height:8px; border-radius:99px; background:var(--dim); }
+  .dot.ok { background:var(--pos); } .dot.fail { background:var(--neg); }
+  .feed-row .g { color:var(--accent); font-size:11px; flex:0 0 auto; }
+  .feed-row .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .feed-row .del { background:none; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:2px 6px; }
+  .add { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+  .add input, .add select {
+    padding:11px 12px; border-radius:9px; border:1px solid var(--edge);
+    background:rgba(0,0,0,0.25); color:var(--paper); font-size:14px; outline:none;
+  }
+  .add button {
+    padding:12px 0; border-radius:9px; border:none; background:var(--accent);
+    color:#1A1408; font-size:14px; font-weight:700; cursor:pointer;
+  }
+  .io { display:flex; gap:8px; margin-top:18px; }
+  .res-row { display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid rgba(42,50,59,0.5); }
+  .res-row .info { flex:1; min-width:0; }
+  .res-row .t { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .res-row .m { font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+  .res-row .addF {
+    flex:0 0 auto; padding:8px 14px; border-radius:9px; font-size:12px; font-weight:700;
+    border:none; background:var(--accent); color:#1A1408; cursor:pointer;
+  }
+  .res-row .addF:disabled { background:var(--edge); color:var(--dim); }
+  .io button {
+    flex:1; padding:10px 0; border-radius:9px; font-size:12px;
+    border:1px solid var(--edge); background:transparent; color:var(--dim); cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Feed<span>.</span></h1>
+  <div class="learn">学習データ <b id="nRated">0</b> 件</div>
+</header>
+<div class="badge" id="badge"></div>
+
+<div class="chips" id="chips"></div>
+
+<div class="bar">
+  <button class="primary" id="refresh">記事を取得</button>
+</div>
+<div class="status" id="status"></div>
+
+<div id="list"><div class="empty">「記事を取得」で開始。<br>◎/×の評価が溜まるほど精度が上がる。</div></div>
+
+<div class="mgr">
+  <button class="mgr-toggle" id="mgrToggle">▸ フィード管理</button>
+  <div id="mgrBody" style="display:none">
+    <div id="feedList"></div>
+    <div class="add" style="margin-top:16px">
+      <select id="searchGenre"></select>
+      <input type="text" id="q" placeholder="キーワード または サイトURLで検索">
+      <button id="searchBtn">フィードを検索</button>
+    </div>
+    <div id="searchResults"></div>
+    <div class="add">
+      <select id="addGenre"></select>
+      <input type="text" id="addName" placeholder="フィード名（例: GIGAZINE）">
+      <input type="url" id="addUrl" placeholder="RSSのURL（https://...）">
+      <button id="addBtn">フィードを追加</button>
+    </div>
+    <div class="io">
+      <button id="exportBtn">データを書き出す</button>
+      <button id="importBtn">データを読み込む</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY = "news-app-v1";
+const PROXIES = [
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+  u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
+];
+const GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+
+const DEFAULT_FEEDS = [
+  { genre:"テック/AI", name:"GIGAZINE", url:"https://gigazine.net/news/rss_2.0/" },
+  { genre:"テック/AI", name:"ITmedia AI+", url:"https://rss.itmedia.co.jp/rss/2.0/aiplus.xml" },
+  { genre:"科学", name:"ナゾロジー", url:"https://nazology.net/feed" },
+  { genre:"投資/経済", name:"東洋経済", url:"https://toyokeizai.net/list/feed/rss" },
+  { genre:"投資/経済", name:"NHK経済", url:"https://www3.nhk.or.jp/rss/news/cat5.xml" },
+  { genre:"ポーカー", name:"PokerNews(EN)", url:"https://www.pokernews.com/rss.php" },
+  { genre:"アニメ", name:"コミックナタリー", url:"https://natalie.mu/comic/feed/news" },
+  { genre:"アニメ", name:"アニメ!アニメ!", url:"https://animeanime.jp/rss20/index.rdf" },
+  { genre:"エンタメ", name:"音楽ナタリー", url:"https://natalie.mu/music/feed/news" },
+  { genre:"心理学", name:"カラパイア", url:"https://karapaia.com/index.rdf" },
+  { genre:"ペット", name:"sippo", url:"https://sippo.asahi.com/rss/index.rdf" },
+  { genre:"釣り", name:"TSURINEWS", url:"https://tsurinews.jp/feed/" },
+];
+
+// ── state ──
+let S = {
+  feeds: DEFAULT_FEEDS.map((f,i)=>({ id:"d"+i, ...f })),
+  model: { like:{}, dis:{}, likeN:0, disN:0 },
+  rated: {},            // hash -> 1
+  saved: [],            // ◎を付けた記事の保存リスト
+};
+let articles = [];      // {hash,title,link,date,genre,source,score}
+let feedStatus = {};    // feedId -> ok|fail|loading
+let activeGenre = "すべて";
+
+// ── storage ──
+function showBadge(t, ok){
+  if(ok) return; // 成功時は無表示。失敗時のみ画面下部に通知
+  const b=document.getElementById("badge");
+  b.textContent=t; b.className="badge error";
+  clearTimeout(showBadge._t); showBadge._t=setTimeout(()=>b.className="badge",3000);
+}
+function load(){ try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); } }
+function save(){
+  try{
+    const j=JSON.stringify(S);
+    localStorage.setItem(KEY,j);
+    if(localStorage.getItem(KEY)===j) showBadge("✓ 保存済み",true);
+    else showBadge("⚠ 保存に失敗",false);
+  }catch(e){ showBadge("⚠ 保存に失敗",false); }
+}
+
+// ── learning (Naive Bayes / char-bigram + ascii words) ──
+function feats(text){
+  const f=new Set(), t=text.toLowerCase();
+  (t.match(/[a-z0-9]{2,}/g)||[]).forEach(w=>f.add(w));
+  t.replace(/[^\u3040-\u30ff\u4e00-\u9fff\u30fc]+/g," ").split(" ").forEach(seq=>{
+    if(seq.length===1) f.add(seq);
+    for(let i=0;i<seq.length-1;i++) f.add(seq.slice(i,i+2));
+  });
+  return [...f];
+}
+function scoreOf(title){
+  const m=S.model, fs=feats(title);
+  if(!fs.length || (m.likeN+m.disN)===0) return 0;
+  let s=0;
+  for(const f of fs){
+    s += Math.log(((m.like[f]||0)+1)/(m.likeN+2)) - Math.log(((m.dis[f]||0)+1)/(m.disN+2));
+  }
+  return s/fs.length;
+}
+function pct(score){ return Math.round(100/(1+Math.exp(-score*6))); }
+function train(title, like){
+  const m=S.model;
+  for(const f of feats(title)){
+    const tbl = like?m.like:m.dis;
+    tbl[f]=(tbl[f]||0)+1;
+  }
+  like?m.likeN++:m.disN++;
+}
+
+// ── fetch & parse ──
+function hash(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return "h"+(h>>>0).toString(36); }
+function parseFeed(xmlText, feed){
+  const doc=new DOMParser().parseFromString(xmlText,"text/xml");
+  if(doc.querySelector("parsererror")) return [];
+  let nodes=[...doc.querySelectorAll("item")];
+  if(!nodes.length) nodes=[...doc.querySelectorAll("entry")];
+  return nodes.slice(0,15).map(n=>{
+    const q=t=>n.querySelector(t);
+    const title=(q("title")?.textContent||"").trim();
+    let link=q("link")?.textContent?.trim();
+    if(!link) link=q("link")?.getAttribute("href")||"";
+    let date=q("pubDate")?.textContent || q("updated")?.textContent || q("published")?.textContent || "";
+    if(!date){ const dc=n.getElementsByTagName("dc:date"); if(dc.length) date=dc[0].textContent; }
+    if(!title||!link) return null;
+    return { hash:hash(link), title, link, genre:feed.genre, source:feed.name,
+             date: date?new Date(date).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"" };
+  }).filter(Boolean);
+}
+async function fetchFeed(feed){
+  feedStatus[feed.id]="loading"; renderFeeds();
+  for(const proxy of PROXIES){
+    try{
+      const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),12000);
+      const res=await fetch(proxy(feed.url),{signal:ctrl.signal});
+      clearTimeout(t);
+      if(!res.ok) continue;
+      const items=parseFeed(await res.text(), feed);
+      if(!items.length) continue;
+      feedStatus[feed.id]="ok";
+      return items;
+    }catch(e){ /* 次のプロキシへ */ }
+  }
+  feedStatus[feed.id]="fail";
+  return [];
+}
+async function refresh(){
+  const btn=document.getElementById("refresh");
+  btn.disabled=true;
+  const targets=S.feeds.filter(f=>activeGenre==="すべて"||f.genre===activeGenre);
+  if(!targets.length){ setStatus("このジャンルのフィードが未登録。フィード管理から追加しろ。"); btn.disabled=false; return; }
+  setStatus("取得中… 0/"+targets.length);
+  const results=[]; let done=0;
+  await Promise.all(targets.map(async f=>{
+    results.push(...await fetchFeed(f));
+    setStatus("取得中… "+(++done)+"/"+targets.length);
+  }));
+  const seen=new Set();
+  articles=results.filter(a=>!S.rated[a.hash]&&!seen.has(a.hash)&&seen.add(a.hash));
+  articles.forEach(a=>a.score=scoreOf(a.title));
+  articles.sort((a,b)=>b.score-a.score);
+  const fails=targets.filter(f=>feedStatus[f.id]==="fail").length;
+  setStatus(articles.length+"件取得"+(fails?"（"+fails+"フィードが取得失敗 → フィード管理で確認）":""));
+  btn.disabled=false;
+  renderList(); renderFeeds();
+}
+function setStatus(t){ document.getElementById("status").textContent=t; }
+
+// ── render ──
+function esc(s){ return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function renderChips(){
+  const c=document.getElementById("chips");
+  c.innerHTML=["すべて",...GENRES,"★保存済み"].map(g=>
+    `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}</button>`).join("");
+  c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ activeGenre=b.dataset.g; renderChips(); renderList(); });
+}
+function renderList(){
+  const list=document.getElementById("list");
+  document.getElementById("nRated").textContent=S.model.likeN+S.model.disN;
+  if(activeGenre==="★保存済み"){
+    if(!S.saved.length){ list.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
+    list.innerHTML=S.saved.map((a,i)=>`
+      <div class="art">
+        <div class="top">
+          <div style="flex:1">
+            <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+            <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+          </div>
+          <button class="del" data-i="${i}" style="background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:2px 6px">×</button>
+        </div>
+      </div>`).join("");
+    list.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
+      S.saved.splice(Number(b.dataset.i),1); save(); renderList();
+    });
+    return;
+  }
+  const view=articles.filter(a=>activeGenre==="すべて"||a.genre===activeGenre);
+  if(!view.length){ list.innerHTML='<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。</div>'; return; }
+  list.innerHTML=view.slice(0,60).map(a=>`
+    <div class="art" data-h="${a.hash}">
+      <div class="top">
+        <div class="score">${pct(a.score)}<small>MATCH</small></div>
+        <div style="flex:1">
+          <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+          <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+        </div>
+      </div>
+      <div class="acts">
+        <button class="yes">◎ 興味あり</button>
+        <button class="no">× 興味なし</button>
+      </div>
+    </div>`).join("");
+  list.querySelectorAll(".art").forEach(el=>{
+    const h=el.dataset.h;
+    el.querySelector(".yes").onclick=()=>rate(h,true);
+    el.querySelector(".no").onclick=()=>rate(h,false);
+  });
+}
+function rate(h, like){
+  const a=articles.find(x=>x.hash===h); if(!a) return;
+  train(a.title, like);
+  S.rated[h]=1;
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
+  articles=articles.filter(x=>x.hash!==h);
+  articles.forEach(x=>x.score=scoreOf(x.title));
+  articles.sort((a,b)=>b.score-a.score);
+  save(); renderList();
+}
+function renderFeeds(){
+  const el=document.getElementById("feedList");
+  el.innerHTML=S.feeds.map(f=>`
+    <div class="feed-row">
+      <span class="dot ${feedStatus[f.id]||""}"></span>
+      <span class="g">${f.genre}</span>
+      <span class="n">${esc(f.name)}</span>
+      <button class="del" data-id="${f.id}">×</button>
+    </div>`).join("");
+  el.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
+    S.feeds=S.feeds.filter(f=>f.id!==b.dataset.id); save(); renderFeeds();
+  });
+}
+
+// ── feed manager / io ──
+document.getElementById("mgrToggle").onclick=()=>{
+  const b=document.getElementById("mgrBody");
+  const open=b.style.display==="none";
+  b.style.display=open?"block":"none";
+  document.getElementById("mgrToggle").textContent=(open?"▾":"▸")+" フィード管理";
+};
+document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+
+// ── feed search ──
+async function feedlySearch(q){
+  const url="https://cloud.feedly.com/v3/search/feeds?count=12&locale=ja&query="+encodeURIComponent(q);
+  const tries=[u=>u, ...PROXIES];
+  for(const p of tries){
+    try{
+      const res=await fetch(p(url)); if(!res.ok) continue;
+      const j=await res.json();
+      if(!j.results) continue;
+      return j.results.map(r=>({
+        title:(r.title||r.website||"無題"),
+        url:(r.feedId||"").replace(/^feed\//,""),
+        meta:(r.website||"")+(r.subscribers?` ・ 読者${r.subscribers.toLocaleString()}`:""),
+      })).filter(r=>/^https?:/.test(r.url));
+    }catch(e){}
+  }
+  return null;
+}
+async function discoverFromSite(siteUrl){
+  if(!/^https?:\/\//.test(siteUrl)) siteUrl="https://"+siteUrl;
+  for(const p of PROXIES){
+    try{
+      const res=await fetch(p(siteUrl)); if(!res.ok) continue;
+      const doc=new DOMParser().parseFromString(await res.text(),"text/html");
+      const links=[...doc.querySelectorAll('link[rel="alternate"]')]
+        .filter(l=>/rss|atom|xml/i.test(l.getAttribute("type")||""));
+      const out=[];
+      for(const l of links){
+        try{ out.push({ title:l.getAttribute("title")||"検出されたフィード",
+                        url:new URL(l.getAttribute("href"),siteUrl).href, meta:siteUrl }); }catch(e){}
+      }
+      if(out.length) return out;
+      const base=siteUrl.replace(/\/+$/,"");
+      return ["/feed","/rss","/atom.xml","/index.rdf","/feed.xml"]
+        .map(s=>({ title:"パス候補: "+s, url:base+s, meta:"自動検出失敗のため推測。追加後に●で生死確認" }));
+    }catch(e){}
+  }
+  return null;
+}
+function renderResults(results){
+  const el=document.getElementById("searchResults");
+  if(!results){ el.innerHTML='<div class="empty" style="padding:16px 0">検索に失敗した。時間を置いて再試行しろ。</div>'; return; }
+  if(!results.length){ el.innerHTML='<div class="empty" style="padding:16px 0">該当するフィードが見つからない。</div>'; return; }
+  const existing=new Set(S.feeds.map(f=>f.url));
+  el.innerHTML=results.map((r,i)=>`
+    <div class="res-row">
+      <div class="info">
+        <div class="t">${esc(r.title)}</div>
+        <div class="m">${esc(r.meta||r.url)}</div>
+      </div>
+      <button class="addF" data-i="${i}" ${existing.has(r.url)?"disabled":""}>${existing.has(r.url)?"追加済":"追加"}</button>
+    </div>`).join("");
+  el.querySelectorAll(".addF").forEach(b=>b.onclick=()=>{
+    const r=results[Number(b.dataset.i)];
+    S.feeds.push({ id:"u"+Date.now(), genre:document.getElementById("searchGenre").value,
+                   name:r.title.slice(0,30), url:r.url });
+    save(); renderFeeds();
+    b.disabled=true; b.textContent="追加済";
+  });
+}
+document.getElementById("searchBtn").onclick=async()=>{
+  const q=document.getElementById("q").value.trim();
+  if(!q) return;
+  const btn=document.getElementById("searchBtn");
+  btn.disabled=true; btn.textContent="検索中…";
+  const isUrl=/^(https?:\/\/|[\w-]+\.[\w.-]+\/?)/.test(q)&&q.includes(".")&&!q.includes(" ");
+  const results=isUrl?await discoverFromSite(q):await feedlySearch(q);
+  renderResults(results);
+  btn.disabled=false; btn.textContent="フィードを検索";
+};
+document.getElementById("addBtn").onclick=()=>{
+  const g=document.getElementById("addGenre").value;
+  const n=document.getElementById("addName").value.trim();
+  const u=document.getElementById("addUrl").value.trim();
+  if(!n||!u||!/^https?:\/\//.test(u)){ showBadge("⚠ 名前とURLを正しく入力",false); return; }
+  S.feeds.push({ id:"u"+Date.now(), genre:g, name:n, url:u });
+  document.getElementById("addName").value=""; document.getElementById("addUrl").value="";
+  save(); renderFeeds();
+};
+document.getElementById("exportBtn").onclick=async()=>{
+  const j=JSON.stringify(S);
+  try{ await navigator.clipboard.writeText(j); showBadge("✓ クリップボードにコピーした",true); }
+  catch(e){ prompt("このテキストをコピーして保管:",j); }
+};
+document.getElementById("importBtn").onclick=()=>{
+  const raw=prompt("書き出したデータを貼り付け:"); if(!raw) return;
+  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; save(); renderChips(); renderFeeds(); renderList(); }
+  catch(e){ showBadge("⚠ データ形式が不正",false); }
+};
+document.getElementById("refresh").onclick=refresh;
+
+// ── init ──
+load(); renderChips(); renderFeeds(); renderList();
+</script>
+</body>
+</html>
