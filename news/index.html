@@ -10,27 +10,27 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23101418'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23E0A435'%3E◎%3C/text%3E%3C/svg%3E">
 <style>
   :root {
-    --ink: #101418;
-    --card: #1A2026;
-    --edge: #2A323B;
-    --paper: #E8E4DA;
-    --dim: rgba(232,228,218,0.5);
-    --accent: #E0A435;
-    --pos: #5BB385;
-    --neg: #D0604F;
+    --ink:#101418; --card:#1A2026; --edge:#2A323B;
+    --paper:#E8E4DA; --dim:rgba(232,228,218,0.5);
+    --accent:#E0A435; --pos:#5BB385; --neg:#D0604F;
   }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body {
-    background: var(--ink); color: var(--paper);
-    font-family: -apple-system,'Hiragino Sans',sans-serif;
-    padding: max(24px, env(safe-area-inset-top)) 14px 60px;
-    max-width: 560px; margin: 0 auto;
+    background:var(--ink); color:var(--paper);
+    font-family:-apple-system,'Hiragino Sans',sans-serif;
+    padding:max(24px, env(safe-area-inset-top)) 14px 60px;
+    max-width:560px; margin:0 auto; overscroll-behavior:none;
   }
-  header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px; }
-  h1 { font-family: Georgia,'Hiragino Mincho ProN',serif; font-size:26px; letter-spacing:0.02em; }
-  h1 span { color: var(--accent); }
-  .learn { font-size:11px; color:var(--dim); }
-  .learn b { color:var(--accent); font-weight:600; }
+  header { display:flex; align-items:baseline; justify-content:space-between; }
+  h1 { font-family:Georgia,'Hiragino Mincho ProN',serif; font-size:26px; }
+  h1 span { color:var(--accent); }
+  /* level */
+  .lv { margin-top:8px; }
+  .lv .row1 { display:flex; justify-content:space-between; align-items:baseline; font-size:12px; }
+  .lv .name { font-weight:700; color:var(--accent); font-size:13px; }
+  .lv .next { color:var(--dim); font-size:11px; }
+  .lv .track { height:5px; background:var(--edge); border-radius:99px; margin-top:6px; overflow:hidden; }
+  .lv .fill { height:100%; background:linear-gradient(90deg,var(--accent),#F0C870); border-radius:99px; transition:width .4s ease; }
   .badge {
     display:none; position:fixed; bottom:max(20px, env(safe-area-inset-bottom));
     left:50%; transform:translateX(-50%); z-index:99;
@@ -53,28 +53,58 @@
   .bar button.primary { background:var(--accent); color:#1A1408; border-color:var(--accent); }
   .bar button:disabled { opacity:0.4; }
   .status { font-size:11px; color:var(--dim); margin:8px 2px; min-height:14px; }
-  .art {
-    background:var(--card); border:1px solid var(--edge); border-radius:13px;
-    padding:13px 14px 11px; margin-top:9px;
+  /* deck */
+  .deck-head { display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin:8px 2px 10px; }
+  .deck-head b { color:var(--paper); }
+  .stack { position:relative; height:300px; }
+  .dcard {
+    position:absolute; inset:0; background:var(--card);
+    border:1px solid var(--edge); border-radius:18px; padding:20px 18px;
+    display:flex; flex-direction:column; touch-action:pan-y;
+    will-change:transform;
   }
+  .dcard.back { transform:scale(0.95) translateY(10px); opacity:0.55; pointer-events:none; }
+  .dcard .score {
+    font-family:Georgia,serif; font-size:30px; font-weight:700; color:var(--accent);
+    font-variant-numeric:tabular-nums;
+  }
+  .dcard .score small { font-family:-apple-system,sans-serif; font-size:10px; color:var(--dim); letter-spacing:0.15em; margin-left:4px; }
+  .dcard a { color:var(--paper); text-decoration:none; font-size:18px; line-height:1.5; font-weight:600; display:block; margin-top:10px; flex:1; overflow:hidden; }
+  .dcard .sub { font-size:12px; color:var(--dim); }
+  .dcard .sub .genre { color:var(--accent); }
+  .ov {
+    position:absolute; top:16px; font-size:22px; font-weight:800; padding:6px 14px;
+    border-radius:10px; border:2.5px solid; opacity:0; transform:rotate(-8deg);
+  }
+  .ov.yes { left:16px; color:var(--pos); border-color:var(--pos); }
+  .ov.no  { right:16px; color:var(--neg); border-color:var(--neg); transform:rotate(8deg); }
+  .deck-acts { display:flex; gap:12px; margin-top:14px; }
+  .deck-acts button {
+    flex:1; padding:15px 0; border-radius:13px; font-size:16px; font-weight:700;
+    border:1.5px solid; background:transparent; cursor:pointer;
+  }
+  .deck-acts .yes { color:var(--pos); border-color:rgba(91,179,133,0.5); }
+  .deck-acts .no  { color:var(--dim); border-color:var(--edge); }
+  .hint { text-align:center; font-size:11px; color:var(--dim); margin-top:10px; }
+  /* completion */
+  .done {
+    text-align:center; padding:46px 0 30px;
+  }
+  .done .big { font-family:Georgia,serif; font-size:30px; color:var(--accent); }
+  .done .stats { font-size:14px; color:var(--dim); margin:14px 0 22px; line-height:1.9; }
+  .done .stats b.y { color:var(--pos); } .done .stats b.n { color:var(--neg); }
+  .done button {
+    padding:14px 30px; border-radius:12px; border:none; background:var(--accent);
+    color:#1A1408; font-size:15px; font-weight:700; cursor:pointer;
+  }
+  .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
+  /* saved list */
+  .art { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:13px 14px; margin-top:9px; }
   .art .top { display:flex; gap:10px; align-items:flex-start; }
-  .score {
-    flex:0 0 auto; min-width:44px; text-align:center;
-    font-family:Georgia,serif; font-size:17px; font-weight:700;
-    color:var(--accent); padding-top:1px; font-variant-numeric:tabular-nums;
-  }
-  .score small { display:block; font-family:-apple-system,sans-serif; font-size:9px; color:var(--dim); font-weight:400; letter-spacing:0.1em; }
   .art a { color:var(--paper); text-decoration:none; font-size:15px; line-height:1.45; font-weight:500; display:block; }
   .art .sub { font-size:11px; color:var(--dim); margin-top:5px; }
   .art .sub .genre { color:var(--accent); }
-  .acts { display:flex; gap:8px; margin-top:10px; }
-  .acts button {
-    flex:1; padding:9px 0; border-radius:9px; font-size:13px; font-weight:600;
-    border:1px solid var(--edge); background:transparent; cursor:pointer;
-  }
-  .acts .yes { color:var(--pos); border-color:rgba(91,179,133,0.4); }
-  .acts .no  { color:var(--dim); }
-  .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
+  .art .del { background:none; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:2px 6px; }
   /* feed manager */
   .mgr { margin-top:26px; border-top:1px solid var(--edge); padding-top:14px; }
   .mgr-toggle { background:none; border:none; color:var(--dim); font-size:13px; cursor:pointer; padding:6px 2px; }
@@ -84,7 +114,7 @@
   .feed-row .g { color:var(--accent); font-size:11px; flex:0 0 auto; }
   .feed-row .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .feed-row .del { background:none; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:2px 6px; }
-  .add { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+  .add { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
   .add input, .add select {
     padding:11px 12px; border-radius:9px; border:1px solid var(--edge);
     background:rgba(0,0,0,0.25); color:var(--paper); font-size:14px; outline:none;
@@ -93,7 +123,7 @@
     padding:12px 0; border-radius:9px; border:none; background:var(--accent);
     color:#1A1408; font-size:14px; font-weight:700; cursor:pointer;
   }
-  .io { display:flex; gap:8px; margin-top:18px; }
+  .add button.ghost { background:transparent; border:1px solid var(--accent); color:var(--accent); }
   .res-row { display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid rgba(42,50,59,0.5); }
   .res-row .info { flex:1; min-width:0; }
   .res-row .t { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -103,6 +133,8 @@
     border:none; background:var(--accent); color:#1A1408; cursor:pointer;
   }
   .res-row .addF:disabled { background:var(--edge); color:var(--dim); }
+  .res-note { font-size:11px; color:var(--dim); padding:10px 2px 2px; }
+  .io { display:flex; gap:8px; margin-top:18px; }
   .io button {
     flex:1; padding:10px 0; border-radius:9px; font-size:12px;
     border:1px solid var(--edge); background:transparent; color:var(--dim); cursor:pointer;
@@ -112,18 +144,22 @@
 <body>
 <header>
   <h1>Feed<span>.</span></h1>
-  <div class="learn">学習データ <b id="nRated">0</b> 件</div>
 </header>
+<div class="lv">
+  <div class="row1">
+    <span class="name" id="lvName">Lv.1 見習い</span>
+    <span class="next" id="lvNext"></span>
+  </div>
+  <div class="track"><div class="fill" id="lvFill" style="width:0%"></div></div>
+</div>
 <div class="badge" id="badge"></div>
 
 <div class="chips" id="chips"></div>
 
-<div class="bar">
-  <button class="primary" id="refresh">記事を取得</button>
-</div>
+<div class="bar"><button class="primary" id="refresh">記事を取得</button></div>
 <div class="status" id="status"></div>
 
-<div id="list"><div class="empty">「記事を取得」で開始。<br>◎/×の評価が溜まるほど精度が上がる。</div></div>
+<div id="stage"><div class="empty">「記事を取得」で開始。<br>カードを右スワイプ＝◎ / 左スワイプ＝×。</div></div>
 
 <div class="mgr">
   <button class="mgr-toggle" id="mgrToggle">▸ フィード管理</button>
@@ -133,11 +169,12 @@
       <select id="searchGenre"></select>
       <input type="text" id="q" placeholder="キーワード または サイトURLで検索">
       <button id="searchBtn">フィードを検索</button>
+      <button class="ghost" id="recBtn">学習傾向からおすすめフィードを探す</button>
     </div>
     <div id="searchResults"></div>
     <div class="add">
       <select id="addGenre"></select>
-      <input type="text" id="addName" placeholder="フィード名（例: GIGAZINE）">
+      <input type="text" id="addName" placeholder="フィード名（手動追加）">
       <input type="url" id="addUrl" placeholder="RSSのURL（https://...）">
       <button id="addBtn">フィードを追加</button>
     </div>
@@ -156,6 +193,8 @@ const PROXIES = [
   u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
 ];
 const GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+const DECK_SIZE = 30;
+const LV_TITLES = ["見習い","観察者","分類屋","選別士","目利き","分析官","鑑定士","審美眼","賢者","フィード神"];
 
 const DEFAULT_FEEDS = [
   { genre:"テック/AI", name:"GIGAZINE", url:"https://gigazine.net/news/rss_2.0/" },
@@ -176,16 +215,18 @@ const DEFAULT_FEEDS = [
 let S = {
   feeds: DEFAULT_FEEDS.map((f,i)=>({ id:"d"+i, ...f })),
   model: { like:{}, dis:{}, likeN:0, disN:0 },
-  rated: {},            // hash -> 1
-  saved: [],            // ◎を付けた記事の保存リスト
+  rated: {},
+  saved: [],
 };
-let articles = [];      // {hash,title,link,date,genre,source,score}
-let feedStatus = {};    // feedId -> ok|fail|loading
+let articles = [];
+let deck = [];
+let deckStats = { yes:0, no:0 };
+let feedStatus = {};
 let activeGenre = "すべて";
 
 // ── storage ──
 function showBadge(t, ok){
-  if(ok) return; // 成功時は無表示。失敗時のみ画面下部に通知
+  if(ok) return;
   const b=document.getElementById("badge");
   b.textContent=t; b.className="badge error";
   clearTimeout(showBadge._t); showBadge._t=setTimeout(()=>b.className="badge",3000);
@@ -195,12 +236,11 @@ function save(){
   try{
     const j=JSON.stringify(S);
     localStorage.setItem(KEY,j);
-    if(localStorage.getItem(KEY)===j) showBadge("✓ 保存済み",true);
-    else showBadge("⚠ 保存に失敗",false);
+    if(localStorage.getItem(KEY)!==j) showBadge("⚠ 保存に失敗",false);
   }catch(e){ showBadge("⚠ 保存に失敗",false); }
 }
 
-// ── learning (Naive Bayes / char-bigram + ascii words) ──
+// ── learning ──
 function feats(text){
   const f=new Set(), t=text.toLowerCase();
   (t.match(/[a-z0-9]{2,}/g)||[]).forEach(w=>f.add(w));
@@ -222,11 +262,21 @@ function scoreOf(title){
 function pct(score){ return Math.round(100/(1+Math.exp(-score*6))); }
 function train(title, like){
   const m=S.model;
-  for(const f of feats(title)){
-    const tbl = like?m.like:m.dis;
-    tbl[f]=(tbl[f]||0)+1;
-  }
+  for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+1; }
   like?m.likeN++:m.disN++;
+}
+
+// ── level ──
+function lvThreshold(l){ return 10*l*(l+1)/2; } // L2:10 L3:30 L4:60 L5:100...
+function renderLevel(){
+  const total=S.model.likeN+S.model.disN;
+  let lv=1;
+  while(lv<LV_TITLES.length && total>=lvThreshold(lv)) lv++;
+  const lo=lvThreshold(lv-1), hi=lvThreshold(lv);
+  const maxed=lv>=LV_TITLES.length && total>=lvThreshold(LV_TITLES.length-1);
+  document.getElementById("lvName").textContent="Lv."+lv+" "+LV_TITLES[lv-1];
+  document.getElementById("lvNext").textContent=maxed?"判定 "+total+"件 ・ MAX":"次のLvまであと"+(hi-total)+"判定（計"+total+"件）";
+  document.getElementById("lvFill").style.width=(maxed?100:Math.round((total-lo)/(hi-lo)*100))+"%";
 }
 
 // ── fetch & parse ──
@@ -260,7 +310,7 @@ async function fetchFeed(feed){
       if(!items.length) continue;
       feedStatus[feed.id]="ok";
       return items;
-    }catch(e){ /* 次のプロキシへ */ }
+    }catch(e){}
   }
   feedStatus[feed.id]="fail";
   return [];
@@ -268,7 +318,7 @@ async function fetchFeed(feed){
 async function refresh(){
   const btn=document.getElementById("refresh");
   btn.disabled=true;
-  const targets=S.feeds.filter(f=>activeGenre==="すべて"||f.genre===activeGenre);
+  const targets=S.feeds.filter(f=>activeGenre==="すべて"||activeGenre==="★保存済み"||f.genre===activeGenre);
   if(!targets.length){ setStatus("このジャンルのフィードが未登録。フィード管理から追加しろ。"); btn.disabled=false; return; }
   setStatus("取得中… 0/"+targets.length);
   const results=[]; let done=0;
@@ -281,71 +331,130 @@ async function refresh(){
   articles.forEach(a=>a.score=scoreOf(a.title));
   articles.sort((a,b)=>b.score-a.score);
   const fails=targets.filter(f=>feedStatus[f.id]==="fail").length;
-  setStatus(articles.length+"件取得"+(fails?"（"+fails+"フィードが取得失敗 → フィード管理で確認）":""));
+  setStatus(articles.length+"件取得"+(fails?"（"+fails+"フィードが取得失敗）":""));
   btn.disabled=false;
-  renderList(); renderFeeds();
+  buildDeck(); renderStage(); renderFeeds();
 }
 function setStatus(t){ document.getElementById("status").textContent=t; }
 
-// ── render ──
-function esc(s){ return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function renderChips(){
-  const c=document.getElementById("chips");
-  c.innerHTML=["すべて",...GENRES,"★保存済み"].map(g=>
-    `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}</button>`).join("");
-  c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ activeGenre=b.dataset.g; renderChips(); renderList(); });
+// ── deck ──
+function buildDeck(){
+  const pool=articles.filter(a=>!S.rated[a.hash]&&(activeGenre==="すべて"||a.genre===activeGenre));
+  deck=pool.slice(0,DECK_SIZE);
+  deckStats={yes:0,no:0};
 }
-function renderList(){
-  const list=document.getElementById("list");
-  document.getElementById("nRated").textContent=S.model.likeN+S.model.disN;
-  if(activeGenre==="★保存済み"){
-    if(!S.saved.length){ list.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
-    list.innerHTML=S.saved.map((a,i)=>`
-      <div class="art">
-        <div class="top">
-          <div style="flex:1">
-            <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
-            <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
-          </div>
-          <button class="del" data-i="${i}" style="background:none;border:none;color:var(--dim);font-size:16px;cursor:pointer;padding:2px 6px">×</button>
-        </div>
-      </div>`).join("");
-    list.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
-      S.saved.splice(Number(b.dataset.i),1); save(); renderList();
-    });
+function esc(s){ return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function cardHTML(a, back){
+  return `<div class="dcard ${back?"back":""}" data-h="${a.hash}">
+    <div class="ov yes">◎ 興味あり</div>
+    <div class="ov no">× 興味なし</div>
+    <div class="score">${pct(a.score)}<small>MATCH</small></div>
+    <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+    <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+  </div>`;
+}
+function renderStage(){
+  renderLevel();
+  const st=document.getElementById("stage");
+  if(activeGenre==="★保存済み"){ renderSaved(st); return; }
+  if(!deck.length){
+    const remaining=articles.filter(a=>!S.rated[a.hash]&&(activeGenre==="すべて"||a.genre===activeGenre)).length;
+    if(deckStats.yes+deckStats.no>0){
+      st.innerHTML=`<div class="done">
+        <div class="big">デッキ完了</div>
+        <div class="stats"><b class="y">◎ ${deckStats.yes}</b> ／ <b class="n">× ${deckStats.no}</b><br>学習データ計 ${S.model.likeN+S.model.disN} 件</div>
+        ${remaining>0?'<button id="nextDeck">次の'+Math.min(DECK_SIZE,remaining)+'枚を引く</button>':'<div class="empty" style="padding:6px 0">在庫切れ。「記事を取得」で補充しろ。</div>'}
+      </div>`;
+      const nb=document.getElementById("nextDeck");
+      if(nb) nb.onclick=()=>{ buildDeck(); renderStage(); };
+    } else {
+      st.innerHTML='<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。</div>';
+    }
     return;
   }
-  const view=articles.filter(a=>activeGenre==="すべて"||a.genre===activeGenre);
-  if(!view.length){ list.innerHTML='<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。</div>'; return; }
-  list.innerHTML=view.slice(0,60).map(a=>`
-    <div class="art" data-h="${a.hash}">
+  st.innerHTML=`
+    <div class="deck-head"><span>残り <b>${deck.length}</b> / ${DECK_SIZE}</span><span>◎ ${deckStats.yes} ／ × ${deckStats.no}</span></div>
+    <div class="stack">
+      ${deck[1]?cardHTML(deck[1],true):""}
+      ${cardHTML(deck[0],false)}
+    </div>
+    <div class="deck-acts">
+      <button class="no">× 興味なし</button>
+      <button class="yes">◎ 興味あり</button>
+    </div>
+    <div class="hint">右スワイプ＝◎ ／ 左スワイプ＝× ／ タイトルタップで記事を開く</div>`;
+  const top=st.querySelector(".dcard:not(.back)");
+  attachSwipe(top);
+  st.querySelector(".deck-acts .yes").onclick=()=>flyOut(top,true);
+  st.querySelector(".deck-acts .no").onclick=()=>flyOut(top,false);
+}
+function attachSwipe(card){
+  let sx=0, sy=0, dx=0, dy=0, active=false;
+  card.addEventListener("touchstart",e=>{
+    const t=e.touches[0]; sx=t.clientX; sy=t.clientY; dx=0; dy=0; active=true;
+    card.style.transition="none";
+  },{passive:true});
+  card.addEventListener("touchmove",e=>{
+    if(!active) return;
+    const t=e.touches[0]; dx=t.clientX-sx; dy=t.clientY-sy;
+    if(Math.abs(dx)>Math.abs(dy)+6) e.preventDefault();
+    card.style.transform=`translate(${dx}px,${dy*0.15}px) rotate(${dx/14}deg)`;
+    card.querySelector(".ov.yes").style.opacity=Math.max(0,Math.min(1,dx/90));
+    card.querySelector(".ov.no").style.opacity=Math.max(0,Math.min(1,-dx/90));
+  },{passive:false});
+  card.addEventListener("touchend",()=>{
+    if(!active) return; active=false;
+    if(dx>90) flyOut(card,true,dy);
+    else if(dx<-90) flyOut(card,false,dy);
+    else{
+      card.style.transition="transform .22s ease";
+      card.style.transform="";
+      card.querySelectorAll(".ov").forEach(o=>o.style.opacity=0);
+    }
+  });
+}
+function flyOut(card, like, dy=0){
+  card.style.transition="transform .28s ease, opacity .28s";
+  card.style.transform=`translate(${like?120:-120}vw,${dy}px) rotate(${like?22:-22}deg)`;
+  card.querySelector(like?".ov.yes":".ov.no").style.opacity=1;
+  setTimeout(()=>commitRate(like),230);
+}
+function commitRate(like){
+  const a=deck[0]; if(!a) return;
+  train(a.title, like);
+  S.rated[a.hash]=1;
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
+  like?deckStats.yes++:deckStats.no++;
+  deck.shift();
+  save(); renderStage();
+}
+function renderSaved(st){
+  if(!S.saved.length){ st.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
+  st.innerHTML=S.saved.map((a,i)=>`
+    <div class="art">
       <div class="top">
-        <div class="score">${pct(a.score)}<small>MATCH</small></div>
         <div style="flex:1">
           <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
           <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
         </div>
-      </div>
-      <div class="acts">
-        <button class="yes">◎ 興味あり</button>
-        <button class="no">× 興味なし</button>
+        <button class="del" data-i="${i}">×</button>
       </div>
     </div>`).join("");
-  list.querySelectorAll(".art").forEach(el=>{
-    const h=el.dataset.h;
-    el.querySelector(".yes").onclick=()=>rate(h,true);
-    el.querySelector(".no").onclick=()=>rate(h,false);
+  st.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
+    S.saved.splice(Number(b.dataset.i),1); save(); renderStage();
   });
 }
-function rate(h, like){
-  const a=articles.find(x=>x.hash===h); if(!a) return;
-  train(a.title, like);
-  S.rated[h]=1;
-  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
-  articles=articles.filter(x=>x.hash!==h);
-  articles.forEach(x=>x.score=scoreOf(x.title));
-  articles.sort((a,b)=>b.score-a.score);
-  save(); renderList();
+
+// ── chips / feeds ──
+function renderChips(){
+  const c=document.getElementById("chips");
+  c.innerHTML=["すべて",...GENRES,"★保存済み"].map(g=>
+    `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}</button>`).join("");
+  c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
+    activeGenre=b.dataset.g; renderChips();
+    if(activeGenre!=="★保存済み") buildDeck();
+    renderStage();
+  });
 }
 function renderFeeds(){
   const el=document.getElementById("feedList");
@@ -361,17 +470,7 @@ function renderFeeds(){
   });
 }
 
-// ── feed manager / io ──
-document.getElementById("mgrToggle").onclick=()=>{
-  const b=document.getElementById("mgrBody");
-  const open=b.style.display==="none";
-  b.style.display=open?"block":"none";
-  document.getElementById("mgrToggle").textContent=(open?"▾":"▸")+" フィード管理";
-};
-document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
-document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
-
-// ── feed search ──
+// ── feed search & recommend ──
 async function feedlySearch(q){
   const url="https://cloud.feedly.com/v3/search/feeds?count=12&locale=ja&query="+encodeURIComponent(q);
   const tries=[u=>u, ...PROXIES];
@@ -410,12 +509,13 @@ async function discoverFromSite(siteUrl){
   }
   return null;
 }
-function renderResults(results){
+function renderResults(results, note){
   const el=document.getElementById("searchResults");
-  if(!results){ el.innerHTML='<div class="empty" style="padding:16px 0">検索に失敗した。時間を置いて再試行しろ。</div>'; return; }
-  if(!results.length){ el.innerHTML='<div class="empty" style="padding:16px 0">該当するフィードが見つからない。</div>'; return; }
+  let head=note?`<div class="res-note">${esc(note)}</div>`:"";
+  if(!results){ el.innerHTML=head+'<div class="empty" style="padding:16px 0">検索に失敗した。時間を置いて再試行しろ。</div>'; return; }
+  if(!results.length){ el.innerHTML=head+'<div class="empty" style="padding:16px 0">該当するフィードが見つからない。</div>'; return; }
   const existing=new Set(S.feeds.map(f=>f.url));
-  el.innerHTML=results.map((r,i)=>`
+  el.innerHTML=head+results.map((r,i)=>`
     <div class="res-row">
       <div class="info">
         <div class="t">${esc(r.title)}</div>
@@ -431,6 +531,35 @@ function renderResults(results){
     b.disabled=true; b.textContent="追加済";
   });
 }
+function topKeywords(n){
+  const stop=new Set(["発売","公開","発表","開始","登場","話題","紹介","可能","必要","以上","対応","予定","限定","実施","決定","配信","掲載","本日","今日","記事","最新","注目"]);
+  const cnt={};
+  for(const a of S.saved){
+    const t=a.title;
+    const words=[
+      ...(t.match(/[\u30a0-\u30ff\u30fc]{3,}/g)||[]),
+      ...(t.match(/[\u4e00-\u9fff]{2,4}/g)||[]),
+      ...((t.toLowerCase().match(/[a-z]{3,}/g))||[]),
+    ];
+    new Set(words).forEach(w=>{ if(!stop.has(w)) cnt[w]=(cnt[w]||0)+1; });
+  }
+  let entries=Object.entries(cnt).filter(([w,c])=>c>=2);
+  if(entries.length<n) entries=Object.entries(cnt);
+  return entries.sort((a,b)=>b[1]-a[1]).slice(0,n).map(e=>e[0]);
+}
+document.getElementById("recBtn").onclick=async()=>{
+  if(S.saved.length<5){ renderResults([], "学習データ不足。◎を5件以上溜めてから再実行しろ。"); return; }
+  const btn=document.getElementById("recBtn");
+  btn.disabled=true; btn.textContent="分析中…";
+  const kws=topKeywords(3);
+  const all=[]; const seen=new Set(S.feeds.map(f=>f.url));
+  for(const k of kws){
+    const r=await feedlySearch(k);
+    if(r) for(const x of r){ if(!seen.has(x.url)&&!all.some(a=>a.url===x.url)) all.push(x); }
+  }
+  renderResults(all.slice(0,12), "お前の◎傾向の頻出語「"+kws.join("」「")+"」で検索した結果:");
+  btn.disabled=false; btn.textContent="学習傾向からおすすめフィードを探す";
+};
 document.getElementById("searchBtn").onclick=async()=>{
   const q=document.getElementById("q").value.trim();
   if(!q) return;
@@ -441,6 +570,16 @@ document.getElementById("searchBtn").onclick=async()=>{
   renderResults(results);
   btn.disabled=false; btn.textContent="フィードを検索";
 };
+
+// ── manager / io ──
+document.getElementById("mgrToggle").onclick=()=>{
+  const b=document.getElementById("mgrBody");
+  const open=b.style.display==="none";
+  b.style.display=open?"block":"none";
+  document.getElementById("mgrToggle").textContent=(open?"▾":"▸")+" フィード管理";
+};
+document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("addBtn").onclick=()=>{
   const g=document.getElementById("addGenre").value;
   const n=document.getElementById("addName").value.trim();
@@ -452,18 +591,18 @@ document.getElementById("addBtn").onclick=()=>{
 };
 document.getElementById("exportBtn").onclick=async()=>{
   const j=JSON.stringify(S);
-  try{ await navigator.clipboard.writeText(j); showBadge("✓ クリップボードにコピーした",true); }
+  try{ await navigator.clipboard.writeText(j); }
   catch(e){ prompt("このテキストをコピーして保管:",j); }
 };
 document.getElementById("importBtn").onclick=()=>{
   const raw=prompt("書き出したデータを貼り付け:"); if(!raw) return;
-  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; save(); renderChips(); renderFeeds(); renderList(); }
+  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; save(); renderChips(); renderFeeds(); buildDeck(); renderStage(); }
   catch(e){ showBadge("⚠ データ形式が不正",false); }
 };
 document.getElementById("refresh").onclick=refresh;
 
 // ── init ──
-load(); renderChips(); renderFeeds(); renderList();
+load(); renderChips(); renderFeeds(); renderStage();
 </script>
 </body>
 </html>
