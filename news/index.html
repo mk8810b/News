@@ -280,6 +280,19 @@ function scoreOf(title){
   return (s/n)*(n/(n+4));
 }
 function pct(score){ return Math.max(1, Math.min(99, Math.round(100/(1+Math.exp(-score*2.2))))); }
+// 絶対スコアにバッチ内の相対順位を混ぜて表示用%を確定する。
+// 学習データが◎/×どちらかに偏って絶対値が一方向へ寄っても、取得記事の中での差は必ず付く
+function calibrate(list){
+  const n=list.length;
+  if(!n) return;
+  const sorted=list.map(a=>a.score).sort((x,y)=>x-y);
+  for(const a of list){
+    let lo=0, eq=0;
+    for(const s of sorted){ if(s<a.score) lo++; else if(s===a.score) eq++; }
+    const rel=(lo+eq/2)/n;
+    a.pct=Math.max(1, Math.min(99, Math.round(0.65*pct(a.score)+0.35*(10+rel*80))));
+  }
+}
 function train(title, like){
   const m=S.model;
   for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+1; }
@@ -364,6 +377,7 @@ async function refresh(){
   articles=results.filter(a=>!S.rated[a.hash]&&!seen.has(a.hash)&&seen.add(a.hash));
   articles.forEach(a=>a.score=scoreOf(a.title));
   articles.sort((a,b)=>b.score-a.score);
+  calibrate(articles);
   const fails=targets.filter(f=>feedStatus[f.id]==="fail").length;
   setStatus(articles.length+"件取得"+(fails?"（"+fails+"フィードが取得失敗）":""));
   btn.disabled=false;
@@ -382,7 +396,7 @@ function cardHTML(a, back){
   return `<div class="dcard ${back?"back":""}" data-h="${a.hash}">
     <div class="ov yes">◎ 興味あり</div>
     <div class="ov no">× 興味なし</div>
-    <div class="score">${pct(a.score)}<small>MATCH</small></div>
+    <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
     <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
   </div>`;
