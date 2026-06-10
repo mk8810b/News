@@ -318,22 +318,36 @@ function parseFeed(xmlText, feed){
              date: date?new Date(date).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"" };
   }).filter(Boolean);
 }
+// 全URLへ同時にリクエストし、最初に検証を通った応答を採用して残りは中断する
+function raceFirst(urls, ms, parse){
+  return new Promise(resolve=>{
+    let pending=urls.length, done=false;
+    if(!pending) return resolve(null);
+    const ctrls=urls.map(()=>new AbortController());
+    urls.forEach((u,i)=>{
+      const t=setTimeout(()=>ctrls[i].abort(),ms);
+      fetch(u,{signal:ctrls[i].signal})
+        .then(async res=>{
+          if(!res.ok) throw 0;
+          const v=await parse(res);
+          if(v==null||done) throw 0;
+          done=true;
+          ctrls.forEach((c,j)=>{ if(j!==i) c.abort(); });
+          resolve(v);
+        })
+        .catch(()=>{ if(--pending===0&&!done) resolve(null); })
+        .finally(()=>clearTimeout(t));
+    });
+  });
+}
 async function fetchFeed(feed){
   feedStatus[feed.id]="loading"; renderFeeds();
-  for(const proxy of PROXIES){
-    try{
-      const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),12000);
-      const res=await fetch(proxy(feed.url),{signal:ctrl.signal});
-      clearTimeout(t);
-      if(!res.ok) continue;
-      const items=parseFeed(await res.text(), feed);
-      if(!items.length) continue;
-      feedStatus[feed.id]="ok";
-      return items;
-    }catch(e){}
-  }
-  feedStatus[feed.id]="fail";
-  return [];
+  const items=await raceFirst(PROXIES.map(p=>p(feed.url)), 6500, async res=>{
+    const list=parseFeed(await res.text(), feed);
+    return list.length?list:null;
+  });
+  feedStatus[feed.id]=items?"ok":"fail";
+  return items||[];
 }
 async function refresh(){
   const btn=document.getElementById("refresh");
@@ -493,24 +507,19 @@ function renderFeeds(){
 // ── feed search & recommend ──
 async function feedlySearch(q){
   const url="https://cloud.feedly.com/v3/search/feeds?count=20&locale=ja&query="+encodeURIComponent(q);
-  const tries=[u=>u, ...PROXIES];
-  for(const p of tries){
-    try{
-      const res=await fetch(p(url)); if(!res.ok) continue;
-      const j=await res.json();
-      if(!j.results) continue;
-      return j.results.map(r=>({
-        title:(r.title||r.website||"無題"),
-        url:(r.feedId||"").replace(/^feed\//,""),
-        website:r.website||"",
-        desc:r.description||"",
-        subs:r.subscribers||0,
-        lang:r.language||"",
-        topics:[...(r.deliciousTags||[]),...(r.topics||[])].map(t=>typeof t==="string"?t:(t.label||"")).join(" "),
-      })).filter(r=>/^https?:/.test(r.url));
-    }catch(e){}
-  }
-  return null;
+  return raceFirst([url, ...PROXIES.map(p=>p(url))], 6000, async res=>{
+    const j=await res.json();
+    if(!j.results) return null;
+    return j.results.map(r=>({
+      title:(r.title||r.website||"無題"),
+      url:(r.feedId||"").replace(/^feed\//,""),
+      website:r.website||"",
+      desc:r.description||"",
+      subs:r.subscribers||0,
+      lang:r.language||"",
+      topics:[...(r.deliciousTags||[]),...(r.topics||[])].map(t=>typeof t==="string"?t:(t.label||"")).join(" "),
+    })).filter(r=>/^https?:/.test(r.url));
+  });
 }
 // ジャンル適合・学習済みの好み・読者数・言語で複合スコアを付けて並べ替える
 function rankResults(list, genre){
@@ -536,24 +545,21 @@ function decorate(list, genre){
 }
 async function discoverFromSite(siteUrl){
   if(!/^https?:\/\//.test(siteUrl)) siteUrl="https://"+siteUrl;
-  for(const p of PROXIES){
-    try{
-      const res=await fetch(p(siteUrl)); if(!res.ok) continue;
-      const doc=new DOMParser().parseFromString(await res.text(),"text/html");
-      const links=[...doc.querySelectorAll('link[rel="alternate"]')]
-        .filter(l=>/rss|atom|xml/i.test(l.getAttribute("type")||""));
-      const out=[];
-      for(const l of links){
-        try{ out.push({ title:l.getAttribute("title")||"検出されたフィード",
-                        url:new URL(l.getAttribute("href"),siteUrl).href, meta:siteUrl }); }catch(e){}
-      }
-      if(out.length) return out;
-      const base=siteUrl.replace(/\/+$/,"");
-      return ["/feed","/rss","/atom.xml","/index.rdf","/feed.xml"]
-        .map(s=>({ title:"パス候補: "+s, url:base+s, meta:"自動検出失敗のため推測。追加後に●で生死確認" }));
-    }catch(e){}
-  }
-  return null;
+  const found=await raceFirst(PROXIES.map(p=>p(siteUrl)), 6000, async res=>{
+    const doc=new DOMParser().parseFromString(await res.text(),"text/html");
+    const links=[...doc.querySelectorAll('link[rel="alternate"]')]
+      .filter(l=>/rss|atom|xml/i.test(l.getAttribute("type")||""));
+    const out=[];
+    for(const l of links){
+      try{ out.push({ title:l.getAttribute("title")||"検出されたフィード",
+                      url:new URL(l.getAttribute("href"),siteUrl).href, meta:siteUrl }); }catch(e){}
+    }
+    return out.length?out:null;
+  });
+  if(found) return found;
+  const base=siteUrl.replace(/\/+$/,"");
+  return ["/feed","/rss","/atom.xml","/index.rdf","/feed.xml"]
+    .map(s=>({ title:"パス候補: "+s, url:base+s, meta:"自動検出失敗のため推測。追加後に●で生死確認" }));
 }
 function renderResults(results, note){
   const el=document.getElementById("searchResults");
