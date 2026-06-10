@@ -139,6 +139,88 @@
     flex:1; padding:10px 0; border-radius:9px; font-size:12px;
     border:1px solid var(--edge); background:transparent; color:var(--dim); cursor:pointer;
   }
+  /* match fx */
+  .fx-big { animation:fx-glow-gold 0.5s ease-in-out 5; }
+  .fx-premium { animation:fx-glow-rainbow 2.5s linear 1; border-color:transparent!important; }
+  @keyframes fx-glow-gold {
+    0%,100% { box-shadow:0 0 0 1px var(--edge); }
+    50% { box-shadow:0 0 24px 6px rgba(224,164,53,0.85), 0 0 0 1px var(--accent); }
+  }
+  @keyframes fx-glow-rainbow {
+    0% { box-shadow:0 0 24px 6px hsla(0,90%,60%,0.85); }
+    16.6% { box-shadow:0 0 24px 6px hsla(60,90%,60%,0.85); }
+    33.3% { box-shadow:0 0 24px 6px hsla(120,90%,60%,0.85); }
+    50% { box-shadow:0 0 24px 6px hsla(180,90%,60%,0.85); }
+    66.6% { box-shadow:0 0 24px 6px hsla(240,90%,60%,0.85); }
+    83.3% { box-shadow:0 0 24px 6px hsla(300,90%,60%,0.85); }
+    100% { box-shadow:0 0 0 1px var(--edge); }
+  }
+  .fx-rays {
+    position:absolute; inset:-50%; pointer-events:none; border-radius:50%;
+    background:conic-gradient(from 0deg,
+      rgba(224,164,53,0.35), transparent 12%, transparent 25%,
+      rgba(224,164,53,0.35) 37%, transparent 50%, transparent 62%,
+      rgba(224,164,53,0.35) 75%, transparent 88%, transparent 100%);
+    animation:fx-spin 6s linear infinite;
+    mix-blend-mode:screen;
+  }
+  .fx-premium .fx-rays {
+    background:conic-gradient(from 0deg,
+      hsla(0,90%,65%,0.35), hsla(60,90%,65%,0.35), hsla(120,90%,65%,0.35),
+      hsla(180,90%,65%,0.35), hsla(240,90%,65%,0.35), hsla(300,90%,65%,0.35), hsla(360,90%,65%,0.35));
+    animation:fx-spin 4s linear infinite;
+  }
+  @keyframes fx-spin { to { transform:rotate(360deg); } }
+  .fx-sparkle {
+    position:absolute; z-index:2; pointer-events:none; color:var(--accent);
+    animation:fx-sparkle 1.4s ease-out forwards;
+  }
+  .fx-premium .fx-sparkle { color:#fff; }
+  @keyframes fx-sparkle {
+    0% { opacity:0; transform:translateY(0) scale(0.4) rotate(0deg); }
+    20% { opacity:1; transform:translateY(-8px) scale(1.1) rotate(60deg); }
+    100% { opacity:0; transform:translateY(-46px) scale(0.6) rotate(200deg); }
+  }
+  .fx-banner {
+    position:absolute; top:-14px; left:50%; z-index:3; pointer-events:none;
+    transform:translate(-50%,-60px); white-space:nowrap;
+    font-family:Georgia,serif; font-weight:800; font-size:18px;
+    padding:8px 22px; border-radius:99px; border:2px solid;
+    animation:fx-drop 2.5s cubic-bezier(.34,1.56,.64,1) forwards;
+  }
+  .fx-banner-big {
+    background:linear-gradient(135deg,#F0C870,var(--accent));
+    color:#1A1408; border-color:#F0C870;
+    box-shadow:0 4px 18px rgba(224,164,53,0.6);
+  }
+  .fx-banner-premium {
+    background:linear-gradient(135deg,#ff5e5e,#ffd25e,#5effa0,#5ec8ff,#b15eff);
+    background-size:300% 300%;
+    color:#1A1408; border-color:#fff;
+    box-shadow:0 4px 18px rgba(255,255,255,0.5);
+    animation:fx-drop 2.5s cubic-bezier(.34,1.56,.64,1) forwards, fx-rainbow-bg 1.5s linear infinite;
+  }
+  @keyframes fx-drop {
+    0% { transform:translate(-50%,-60px); opacity:0; }
+    50% { transform:translate(-50%,8px); opacity:1; }
+    65% { transform:translate(-50%,-6px); }
+    80% { transform:translate(-50%,2px); }
+    100% { transform:translate(-50%,0); opacity:1; }
+  }
+  @keyframes fx-rainbow-bg {
+    0% { background-position:0% 50%; }
+    100% { background-position:100% 50%; }
+  }
+  .fx-flash {
+    position:fixed; inset:0; z-index:999; pointer-events:none;
+    background:#fff; opacity:0;
+    animation:fx-flash 0.3s ease-out forwards;
+  }
+  @keyframes fx-flash {
+    0% { opacity:0; }
+    15% { opacity:0.9; }
+    100% { opacity:0; }
+  }
 </style>
 </head>
 <body>
@@ -235,6 +317,7 @@ let deck = [];
 let deckStats = { yes:0, no:0 };
 let feedStatus = {};
 let activeGenre = "すべて";
+const fxShown = new Set();
 
 // ── storage ──
 function showBadge(t, ok){
@@ -435,6 +518,11 @@ function renderStage(){
   attachSwipe(top);
   st.querySelector(".deck-acts .yes").onclick=()=>flyOut(top,true);
   st.querySelector(".deck-acts .no").onclick=()=>flyOut(top,false);
+  const p = deck[0].pct ?? pct(deck[0].score);
+  if(p>=85 && !fxShown.has(deck[0].hash)){
+    fxShown.add(deck[0].hash);
+    playMatchFx(top, p);
+  }
 }
 function attachSwipe(card){
   let sx=0, sy=0, dx=0, dy=0, active=false;
@@ -466,6 +554,67 @@ function flyOut(card, like, dy=0){
   card.style.transform=`translate(${like?120:-120}vw,${dy}px) rotate(${like?22:-22}deg)`;
   card.querySelector(like?".ov.yes":".ov.no").style.opacity=1;
   setTimeout(()=>commitRate(like),230);
+}
+function playMatchFx(card, p){
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const premium = p>=95;
+  card.classList.add(premium?"fx-premium":"fx-big");
+
+  // スコアのロールアップ（スロットのリール風カウントアップ）
+  const scoreEl = card.querySelector(".score");
+  if(scoreEl){
+    const small = scoreEl.querySelector("small");
+    const start = performance.now();
+    const dur = 800;
+    const tick = now=>{
+      if(!scoreEl.isConnected) return;
+      const t = Math.min(1, (now-start)/dur);
+      const cur = Math.round(1 + (p-1) * t);
+      scoreEl.firstChild.nodeValue = String(cur);
+      if(t<1) requestAnimationFrame(tick);
+      else scoreEl.firstChild.nodeValue = String(p);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // 回転する光線オーバーレイ（カード背面に重ねる）
+  const rays = document.createElement("div");
+  rays.className = "fx-rays";
+  card.prepend(rays);
+
+  // スパークル/紙吹雪
+  const sparkleChars = ["✦","★","✧","☆"];
+  for(let i=0;i<10;i++){
+    const sp = document.createElement("span");
+    sp.className = "fx-sparkle";
+    sp.textContent = sparkleChars[Math.floor(Math.random()*sparkleChars.length)];
+    sp.style.left = (Math.random()*100)+"%";
+    sp.style.top = (Math.random()*100)+"%";
+    sp.style.animationDelay = (Math.random()*0.4)+"s";
+    sp.style.fontSize = (12+Math.random()*14)+"px";
+    card.appendChild(sp);
+  }
+
+  // バナー
+  const banner = document.createElement("div");
+  banner.className = "fx-banner " + (premium?"fx-banner-premium":"fx-banner-big");
+  banner.textContent = premium?"🌈 PREMIUM MATCH":"🎰 BIG MATCH";
+  card.appendChild(banner);
+
+  // プレミアムは全画面フラッシュ
+  let flash = null;
+  if(premium){
+    flash = document.createElement("div");
+    flash.className = "fx-flash";
+    document.body.appendChild(flash);
+  }
+
+  setTimeout(()=>{
+    rays.remove();
+    card.querySelectorAll(".fx-sparkle").forEach(el=>el.remove());
+    banner.remove();
+    if(flash) flash.remove();
+  }, 2500);
 }
 function commitRate(like){
   const a=deck[0]; if(!a) return;
