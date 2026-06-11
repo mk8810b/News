@@ -373,7 +373,7 @@ function save(){
 // 未判定記事をキャッシュし、再訪時に取得待ちなしで表示できるようにする
 function saveArticles(){
   try{
-    const list=articles.slice(0,300).map(a=>({hash:a.hash,title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}));
+    const list=articles.slice(0,300).map(a=>({hash:a.hash,title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,ts:a.ts||0}));
     localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), list}));
   }catch(e){ /* 容量超過時は無視 */ }
 }
@@ -386,7 +386,7 @@ function loadArticles(){
     if(!ts || Date.now()-ts >= 24*3600*1000){ localStorage.removeItem(CACHE_KEY); return 0; }
     articles=list.filter(a=>!S.rated[a.hash]);
     articles.forEach(a=>a.score=scoreOf(a.title));
-    articles.sort((a,b)=>b.score-a.score);
+    sortArticles();
     calibrate(articles);
     buildDeck();
     return articles.length;
@@ -434,6 +434,17 @@ function calibrate(list){
     a.pct=Math.max(1, Math.min(99, Math.round(0.65*pct(a.score)+0.35*(10+rel*80))));
   }
 }
+// 鮮度ボーナス: 並び順にのみ加味し、表示%（マッチ度）には影響させない
+function freshBonus(ts){
+  if(!ts) return 0;
+  const h=(Date.now()-ts)/3600000;
+  if(h<=24) return 0.15;
+  if(h<=72) return 0.05;
+  return 0;
+}
+function sortArticles(){
+  articles.sort((a,b)=>(b.score+freshBonus(b.ts))-(a.score+freshBonus(a.ts)));
+}
 function train(title, like){
   const m=S.model;
   for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+1; }
@@ -477,7 +488,8 @@ function parseFeed(xmlText, feed){
     let date=q("pubDate")?.textContent || q("updated")?.textContent || q("published")?.textContent || "";
     if(!date){ const dc=n.getElementsByTagName("dc:date"); if(dc.length) date=dc[0].textContent; }
     if(!title||!link) return null;
-    return { hash:hash(link), title, link, genre:feed.genre, source:feed.name,
+    const t=date?new Date(date).getTime():0;
+    return { hash:hash(link), title, link, genre:feed.genre, source:feed.name, ts:isNaN(t)?0:t,
              date: date?new Date(date).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"" };
   }).filter(Boolean);
 }
@@ -526,7 +538,7 @@ async function refresh(){
   const seen=new Set();
   articles=results.filter(a=>!S.rated[a.hash]&&!seen.has(a.hash)&&seen.add(a.hash));
   articles.forEach(a=>a.score=scoreOf(a.title));
-  articles.sort((a,b)=>b.score-a.score);
+  sortArticles();
   calibrate(articles);
   lastRate=null;
   const fails=targets.filter(f=>feedStatus[f.id]==="fail").length;
@@ -1048,7 +1060,7 @@ async function recommendArticles(){
   if(!fresh.length){ setStatus("新しいおすすめ記事が見つからない。"); return; }
   articles.push(...fresh);
   articles.forEach(a=>a.score=scoreOf(a.title));
-  articles.sort((a,b)=>b.score-a.score);
+  sortArticles();
   calibrate(articles);
   lastRate=null;
   activeGenre="すべて"; renderChips();
@@ -1123,7 +1135,7 @@ document.getElementById("resetBtn").onclick=()=>{
   S.genreStats={};
   if(typeof fxShown!=="undefined") fxShown.clear();
   articles.forEach(a=>a.score=scoreOf(a.title));
-  articles.sort((a,b)=>b.score-a.score);
+  sortArticles();
   calibrate(articles);
   buildDeck();
   save();
