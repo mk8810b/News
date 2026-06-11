@@ -124,12 +124,30 @@
   .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
   .empty #recArt { margin-top:16px; }
   /* saved list */
-  .saved-head { display:flex; justify-content:flex-end; margin-top:10px; }
-  .saved-head button {
-    background:none; border:1px solid rgba(208,96,79,0.5); color:rgba(208,96,79,0.7);
+  .col-head { display:flex; gap:6px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .col-head .rt {
+    background:none; border:1px solid var(--edge); color:var(--dim);
+    font-size:11px; padding:5px 10px; border-radius:99px; cursor:pointer;
+  }
+  .col-head .rt.on { border-color:var(--accent); color:var(--accent); }
+  .col-head .rt.zero { opacity:0.45; }
+  .col-head #clearSaved {
+    margin-left:auto; background:none; border:1px solid rgba(208,96,79,0.5); color:rgba(208,96,79,0.7);
     font-size:11px; padding:6px 12px; border-radius:99px; cursor:pointer;
   }
+  .rbadge {
+    display:inline-block; font-size:10px; font-weight:800; letter-spacing:0.08em;
+    padding:1px 7px; border-radius:6px; margin-right:6px; vertical-align:middle;
+  }
+  .rbadge.ssr { background:linear-gradient(135deg,#ff5e5e,#ffd25e,#5effa0,#5ec8ff,#b15eff); color:#1A1408; }
+  .rbadge.sr { background:var(--accent); color:#1A1408; }
+  .rbadge.r { background:#9BA8B5; color:#1A1408; }
+  .rbadge.n { background:var(--edge); color:var(--dim); }
   .art { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:13px 14px; margin-top:9px; }
+  .art.ssr { border-color:transparent; background:
+    linear-gradient(var(--card),var(--card)) padding-box,
+    linear-gradient(135deg,#ff5e5e,#ffd25e,#5effa0,#5ec8ff,#b15eff) border-box; }
+  .art.sr { border-color:rgba(224,164,53,0.6); }
   .art .top { display:flex; gap:10px; align-items:flex-start; }
   .art a { color:var(--paper); text-decoration:none; font-size:15px; line-height:1.45; font-weight:500; display:block; }
   .art .sub { font-size:11px; color:var(--dim); margin-top:5px; }
@@ -147,6 +165,17 @@
   .ach-row .nm { font-weight:600; }
   .ach-row.locked { color:var(--dim); opacity:0.55; }
   .ach-row .ds { color:var(--dim); flex:1; }
+  .cat-sec { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:14px; margin-bottom:18px; }
+  .cat-cur, .cat-sug { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+  .cat-chip {
+    display:inline-flex; align-items:center; gap:4px; font-size:12px;
+    border:1px solid var(--edge); color:var(--paper); padding:5px 10px; border-radius:99px;
+  }
+  .cat-chip button { background:none; border:none; color:var(--dim); cursor:pointer; font-size:13px; padding:0 2px; }
+  .cat-sug .cat-chip { color:var(--dim); cursor:pointer; }
+  .cat-add { display:flex; gap:8px; }
+  .cat-add input { flex:1; padding:9px 12px; border-radius:9px; border:1px solid var(--edge); background:rgba(0,0,0,0.25); color:var(--paper); font-size:13px; outline:none; }
+  .cat-add button { padding:9px 16px; border-radius:9px; border:none; background:var(--accent); color:#1A1408; font-size:13px; font-weight:700; cursor:pointer; }
   .feed-row { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(42,50,59,0.5); font-size:13px; }
   .dot { flex:0 0 8px; width:8px; height:8px; border-radius:99px; background:var(--dim); }
   .dot.ok { background:var(--pos); } .dot.fail { background:var(--neg); }
@@ -300,6 +329,16 @@
       <div class="radar-title">実績 <span id="achCount"></span></div>
       <div id="achList"></div>
     </div>
+    <div class="cat-sec">
+      <div class="radar-title">カテゴリ</div>
+      <div class="cat-cur" id="catCur"></div>
+      <div class="res-note">候補から追加:</div>
+      <div class="cat-sug" id="catSug"></div>
+      <div class="cat-add">
+        <input type="text" id="catInput" placeholder="自由入力で追加（例: 将棋）">
+        <button id="catAddBtn">追加</button>
+      </div>
+    </div>
     <div id="feedList"></div>
     <div class="add" style="margin-top:16px">
       <select id="searchGenre"></select>
@@ -331,7 +370,9 @@ const PROXIES = [
   u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
   u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
 ];
-const GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+const DEFAULT_GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+const GENRE_SUGGEST = ["ゲーム","映画","ドラマ","料理","旅行","スポーツ","健康","ファッション","政治","国際","ビジネス","ガジェット","車/バイク","歴史","宇宙","DIY"];
+let GENRES = DEFAULT_GENRES;
 const ACH_DEFS=[
   {id:"first_like", name:"はじめての◎", desc:"初めて記事に◎を付けた"},
   {id:"first_big", name:"初BIG", desc:"BIG MATCHを初めて引いた"},
@@ -392,6 +433,7 @@ let deckStats = { yes:0, no:0 };
 let feedStatus = {};
 let activeGenre = "すべて";
 let lastRate = null;
+let savedFilter = "all";
 const fxShown = new Set();
 
 // ── sound / haptics ──
@@ -436,6 +478,11 @@ function unlock(id){
   save();
   showBadge("🏆 実績解除「"+(d?d.name:id)+"」", false, true);
   snd("unlock"); buzz(30);
+}
+// S.genres があればそれを、なければ既定ジャンル一覧をGENRESに反映する
+function applyGenres(){
+  if(S.genres && S.genres.length) GENRES=S.genres;
+  else GENRES=DEFAULT_GENRES;
 }
 function load(){
   try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); }
@@ -506,17 +553,28 @@ function scoreOf(title){
   return (s/n)*(n/(n+4));
 }
 function pct(score){ return Math.max(1, Math.min(99, Math.round(100/(1+Math.exp(-score*2.2))))); }
-// 絶対スコアにバッチ内の相対順位を混ぜて表示用%を確定する。
-// 学習データが◎/×どちらかに偏って絶対値が一方向へ寄っても、取得記事の中での差は必ず付く
+// 保存記事のレア度判定（保存時のpctが基準。pct未記録の旧データは"N"扱い）
+function rarityOf(p){
+  if(p==null) return "N";
+  if(p>=95) return "SSR";
+  if(p>=85) return "SR";
+  if(p>=70) return "R";
+  return "N";
+}
+// 表示用%の確定: バッチ中央値で中心化した絶対スコア＋バッチ内順位の合成。
+// 中央値基準にすることで、◎/×どちらかに偏った学習でモデル全体が
+// 正負に寄っても表示%の分布が潰れない（×ばかり押しても上位は高%になる）
 function calibrate(list){
   const n=list.length;
   if(!n) return;
   const sorted=list.map(a=>a.score).sort((x,y)=>x-y);
+  const med=sorted[Math.floor(n/2)];
   for(const a of list){
     let lo=0, eq=0;
     for(const s of sorted){ if(s<a.score) lo++; else if(s===a.score) eq++; }
     const rel=(lo+eq/2)/n;
-    a.pct=Math.max(1, Math.min(99, Math.round(0.65*pct(a.score)+0.35*(10+rel*80))));
+    const abs=100/(1+Math.exp(-(a.score-med)*3.5));
+    a.pct=Math.max(1, Math.min(99, Math.round(0.6*abs+0.4*(5+rel*92))));
   }
 }
 // 鮮度ボーナス: 並び順にのみ加味し、表示%（マッチ度）には影響させない
@@ -875,7 +933,7 @@ function commitRate(like){
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
   }
-  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,pct:a.pct??pct(a.score)}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
   S.genreStats=S.genreStats||{};
   const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
@@ -919,17 +977,38 @@ function undoRate(){
 }
 function renderSaved(st){
   if(!S.saved.length){ st.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
-  st.innerHTML=`<div class="saved-head"><button id="clearSaved">すべて削除（${S.saved.length}件）</button></div>`
-    + S.saved.map((a,i)=>`
-    <div class="art">
+
+  const rarities=["SSR","SR","R","N"];
+  const counts={SSR:0,SR:0,R:0,N:0};
+  S.saved.forEach(a=>counts[rarityOf(a.pct)]++);
+
+  const headBtns=['<button class="rt all '+(savedFilter==="all"?"on":"")+'" data-r="all">すべて '+S.saved.length+'件</button>']
+    .concat(rarities.map(r=>`<button class="rt ${r.toLowerCase()} ${savedFilter===r?"on":""} ${counts[r]?"":"zero"}" data-r="${r}">${r} ${counts[r]}</button>`));
+
+  const indexed=S.saved.map((a,i)=>({a,i})).filter(({a})=>savedFilter==="all"||rarityOf(a.pct)===savedFilter);
+
+  const list=indexed.length
+    ? indexed.map(({a,i})=>{
+      const r=rarityOf(a.pct);
+      return `
+    <div class="art ${r.toLowerCase()}">
       <div class="top">
         <div style="flex:1">
-          <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+          <a href="${esc(a.link)}" target="_blank" rel="noopener"><span class="rbadge ${r.toLowerCase()}">${r}</span>${esc(a.title)}</a>
           <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
         </div>
         <button class="del" data-i="${i}">×</button>
       </div>
-    </div>`).join("");
+    </div>`;
+    }).join("")
+    : '<div class="empty">このレア度の記事はまだない。</div>';
+
+  st.innerHTML=`<div class="col-head">${headBtns.join("")}<button id="clearSaved">すべて削除（${S.saved.length}件）</button></div>`
+    + list;
+
+  st.querySelectorAll(".rt").forEach(b=>b.onclick=()=>{
+    savedFilter=b.dataset.r; renderStage();
+  });
   st.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
     S.saved.splice(Number(b.dataset.i),1); save(); renderStage();
   });
@@ -941,6 +1020,10 @@ function renderSaved(st){
 }
 
 // ── chips / feeds ──
+function fillGenreSelects(){
+  document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+  document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+}
 function renderChips(){
   const c=document.getElementById("chips");
   const cnt=g=>articles.filter(a=>!S.rated[a.hash]&&(g==="すべて"||a.genre===g)).length;
@@ -983,6 +1066,7 @@ function updateView(){
     status.style.display="none";
     renderRadar();
     renderAch();
+    renderCats();
   } else {
     mgr.style.display="none";
     stage.style.display="";
@@ -991,6 +1075,43 @@ function updateView(){
     renderStage();
   }
 }
+// ── category management ──
+function addGenreCat(name){
+  name=(name||"").trim();
+  if(!name || GENRES.includes(name) || GENRES.length>=20){ showBadge("⚠ 追加できない",false); return; }
+  GENRES.push(name);
+  S.genres=GENRES.slice();
+  save();
+  renderCats();
+  fillGenreSelects();
+  renderChips();
+}
+function removeGenreCat(name){
+  if(GENRES.length<=1){ showBadge("⚠ 追加できない",false); return; }
+  if(S.feeds.some(f=>f.genre===name)){ showBadge("⚠ このカテゴリのフィードが存在する",false); return; }
+  GENRES=GENRES.filter(g=>g!==name);
+  S.genres=GENRES.slice();
+  if(activeGenre===name) activeGenre="すべて";
+  save();
+  renderCats();
+  fillGenreSelects();
+  renderChips();
+  renderRadar();
+}
+function renderCats(){
+  const cur=document.getElementById("catCur");
+  const sug=document.getElementById("catSug");
+  cur.innerHTML=GENRES.map(g=>`<span class="cat-chip">${esc(g)}<button class="cat-del" data-g="${esc(g)}">×</button></span>`).join("");
+  cur.querySelectorAll(".cat-del").forEach(b=>b.onclick=()=>removeGenreCat(b.dataset.g));
+  const rest=GENRE_SUGGEST.filter(g=>!GENRES.includes(g));
+  sug.innerHTML=rest.map(g=>`<span class="cat-chip" data-g="${esc(g)}">＋${esc(g)}</span>`).join("");
+  sug.querySelectorAll(".cat-chip").forEach(b=>b.onclick=()=>addGenreCat(b.dataset.g));
+}
+document.getElementById("catAddBtn").onclick=()=>{
+  const inp=document.getElementById("catInput");
+  addGenreCat(inp.value);
+  inp.value="";
+};
 function renderFeeds(){
   const el=document.getElementById("feedList");
   el.innerHTML=S.feeds.map(f=>`
@@ -1288,8 +1409,6 @@ document.getElementById("searchBtn").onclick=async()=>{
 };
 
 // ── manager / io ──
-document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
-document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("addBtn").onclick=()=>{
   const g=document.getElementById("addGenre").value;
   const n=document.getElementById("addName").value.trim();
@@ -1307,7 +1426,7 @@ document.getElementById("exportBtn").onclick=async()=>{
 };
 document.getElementById("importBtn").onclick=()=>{
   const raw=prompt("書き出したデータを貼り付け:"); if(!raw) return;
-  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; save(); renderChips(); renderFeeds(); buildDeck(); renderStage(); }
+  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; applyGenres(); fillGenreSelects(); save(); renderChips(); renderFeeds(); buildDeck(); renderStage(); }
   catch(e){ showBadge("⚠ データ形式が不正",false); }
 };
 document.getElementById("resetBtn").onclick=()=>{
@@ -1349,6 +1468,8 @@ document.addEventListener("keydown",e=>{
 
 // ── init ──
 load();
+applyGenres();
+fillGenreSelects();
 syncSndBtn();
 const cached=loadArticles();
 renderChips(); renderFeeds(); renderStage();
