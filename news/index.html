@@ -60,7 +60,7 @@
   .dcard {
     position:absolute; inset:0; background:var(--card);
     border:1px solid var(--edge); border-radius:18px; padding:20px 18px;
-    display:flex; flex-direction:column; touch-action:pan-y;
+    display:flex; flex-direction:column; touch-action:none;
     will-change:transform;
   }
   .dcard.back { transform:scale(0.95) translateY(10px); opacity:0.55; pointer-events:none; }
@@ -106,8 +106,11 @@
   .art .sub .genre { color:var(--accent); }
   .art .del { background:none; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:2px 6px; }
   /* feed manager */
-  .mgr { margin-top:26px; border-top:1px solid var(--edge); padding-top:14px; }
-  .mgr-toggle { background:none; border:none; color:var(--dim); font-size:13px; cursor:pointer; padding:6px 2px; }
+  .mgr { margin-top:26px; padding-top:14px; }
+  .radar-sec { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:14px; margin-bottom:18px; }
+  .radar-title { font-size:13px; font-weight:700; color:var(--accent); margin-bottom:6px; }
+  .radar-sec svg { width:100%; height:auto; display:block; }
+  .radar-note { font-size:11px; color:var(--dim); text-align:center; margin-top:4px; }
   .feed-row { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(42,50,59,0.5); font-size:13px; }
   .dot { flex:0 0 8px; width:8px; height:8px; border-radius:99px; background:var(--dim); }
   .dot.ok { background:var(--pos); } .dot.fail { background:var(--neg); }
@@ -244,9 +247,13 @@
 
 <div id="stage"><div class="empty">「記事を取得」で開始。<br>カードを右スワイプ＝◎ / 左スワイプ＝×。</div></div>
 
-<div class="mgr">
-  <button class="mgr-toggle" id="mgrToggle">▸ フィード管理</button>
-  <div id="mgrBody" style="display:none">
+<div class="mgr" style="display:none">
+  <div id="mgrBody">
+    <div class="radar-sec">
+      <div class="radar-title">好みの傾向</div>
+      <div id="radarBox"></div>
+      <div class="radar-note" id="radarNote"></div>
+    </div>
     <div id="feedList"></div>
     <div class="add" style="margin-top:16px">
       <select id="searchGenre"></select>
@@ -313,6 +320,7 @@ let S = {
   model: { like:{}, dis:{}, likeN:0, disN:0 },
   rated: {},
   saved: [],
+  genreStats: {},
 };
 let articles = [];
 let deck = [];
@@ -328,7 +336,17 @@ function showBadge(t, ok){
   b.textContent=t; b.className="badge error";
   clearTimeout(showBadge._t); showBadge._t=setTimeout(()=>b.className="badge",3000);
 }
-function load(){ try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); } }
+function load(){
+  try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); }
+  // 旧データ移行: genreStatsが空なら、保存済み記事から◎数だけ復元する（×は復元不能）
+  if((!S.genreStats || !Object.keys(S.genreStats).length) && S.saved && S.saved.length){
+    S.genreStats={};
+    S.saved.forEach(a=>{
+      const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
+      gs.y++;
+    });
+  }
+}
 function save(){
   try{
     const j=JSON.stringify(S);
@@ -535,7 +553,7 @@ function attachSwipe(card){
   card.addEventListener("touchmove",e=>{
     if(!active) return;
     const t=e.touches[0]; dx=t.clientX-sx; dy=t.clientY-sy;
-    if(Math.abs(dx)>Math.abs(dy)+6) e.preventDefault();
+    e.preventDefault();
     card.style.transform=`translate(${dx}px,${dy*0.15}px) rotate(${dx/14}deg)`;
     card.querySelector(".ov.yes").style.opacity=Math.max(0,Math.min(1,dx/90));
     card.querySelector(".ov.no").style.opacity=Math.max(0,Math.min(1,-dx/90));
@@ -624,6 +642,9 @@ function commitRate(like){
   S.rated[a.hash]=1;
   if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
+  S.genreStats=S.genreStats||{};
+  const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
+  like?gs.y++:gs.n++;
   deck.shift();
   save(); renderStage();
 }
@@ -647,13 +668,32 @@ function renderSaved(st){
 // ── chips / feeds ──
 function renderChips(){
   const c=document.getElementById("chips");
-  c.innerHTML=["すべて",...GENRES,"★保存済み"].map(g=>
+  c.innerHTML=["すべて",...GENRES,"★保存済み","⚙管理"].map(g=>
     `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}</button>`).join("");
   c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     activeGenre=b.dataset.g; renderChips();
-    if(activeGenre!=="★保存済み") buildDeck();
-    renderStage();
+    if(activeGenre!=="★保存済み"&&activeGenre!=="⚙管理") buildDeck();
+    updateView();
   });
+}
+function updateView(){
+  const mgr=document.querySelector(".mgr");
+  const stage=document.getElementById("stage");
+  const bar=document.querySelector(".bar");
+  const status=document.getElementById("status");
+  if(activeGenre==="⚙管理"){
+    mgr.style.display="block";
+    stage.style.display="none";
+    bar.style.display="none";
+    status.style.display="none";
+    renderRadar();
+  } else {
+    mgr.style.display="none";
+    stage.style.display="";
+    bar.style.display="";
+    status.style.display="";
+    renderStage();
+  }
 }
 function renderFeeds(){
   const el=document.getElementById("feedList");
@@ -667,6 +707,72 @@ function renderFeeds(){
   el.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
     S.feeds=S.feeds.filter(f=>f.id!==b.dataset.id); save(); renderFeeds();
   });
+}
+
+// ── radar chart ──
+function renderRadar(){
+  const box=document.getElementById("radarBox");
+  const note=document.getElementById("radarNote");
+  const stats=S.genreStats||{};
+  const n=GENRES.length;
+  const cx=160, cy=130, R=88;
+  const angle=i=>-Math.PI/2 + i*2*Math.PI/n;
+
+  const values=GENRES.map(g=>{
+    const st=stats[g]||{y:0,n:0};
+    const t=st.y+st.n;
+    return t ? ((st.y+0.5)/(t+1))*(t/(t+3)) : 0;
+  });
+  const total=GENRES.reduce((sum,g)=>{ const st=stats[g]||{y:0,n:0}; return sum+st.y+st.n; },0);
+
+  if(total===0){
+    box.innerHTML='<div class="empty">まだ学習データがない。<br>カードを◎/×で判定すると傾向が表示される。</div>';
+    note.textContent="";
+    return;
+  }
+
+  let maxIdx=0;
+  values.forEach((v,i)=>{ if(v>values[maxIdx]) maxIdx=i; });
+
+  // グリッド: 同心10角形(25/50/75/100%) + 放射線
+  let grid="";
+  [0.25,0.5,0.75,1].forEach(f=>{
+    const pts=GENRES.map((_,i)=>{
+      const a=angle(i), r=R*f;
+      return (cx+r*Math.cos(a)).toFixed(1)+","+(cy+r*Math.sin(a)).toFixed(1);
+    }).join(" ");
+    grid+=`<polygon points="${pts}" fill="none" stroke="var(--edge)" stroke-width="1"/>`;
+  });
+  GENRES.forEach((_,i)=>{
+    const a=angle(i);
+    grid+=`<line x1="${cx}" y1="${cy}" x2="${(cx+R*Math.cos(a)).toFixed(1)}" y2="${(cy+R*Math.sin(a)).toFixed(1)}" stroke="var(--edge)" stroke-width="1"/>`;
+  });
+
+  // データポリゴン + 頂点
+  const pts=values.map((v,i)=>{
+    const a=angle(i), r=R*v;
+    return [(cx+r*Math.cos(a)), (cy+r*Math.sin(a))];
+  });
+  const polyStr=pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ");
+  let data=`<polygon points="${polyStr}" fill="rgba(224,164,53,0.2)" stroke="var(--accent)" stroke-width="1.5"/>`;
+  pts.forEach(p=>{
+    data+=`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.5" fill="var(--accent)"/>`;
+  });
+
+  // ラベル
+  let labels="";
+  GENRES.forEach((g,i)=>{
+    const a=angle(i);
+    const lx=cx+105*Math.cos(a), ly=cy+105*Math.sin(a);
+    let anchor="middle";
+    if(Math.cos(a)>0.3) anchor="start";
+    else if(Math.cos(a)<-0.3) anchor="end";
+    const fill=(i===maxIdx)?"var(--accent)":"var(--dim)";
+    labels+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" fill="${fill}" text-anchor="${anchor}" dominant-baseline="middle">${esc(g)}</text>`;
+  });
+
+  box.innerHTML=`<svg viewBox="0 0 320 260" xmlns="http://www.w3.org/2000/svg">${grid}${data}${labels}</svg>`;
+  note.textContent=`判定${total}件 ・ 最も好み: ${GENRES[maxIdx]}`;
 }
 
 // ── feed search & recommend ──
@@ -803,12 +909,6 @@ document.getElementById("searchBtn").onclick=async()=>{
 };
 
 // ── manager / io ──
-document.getElementById("mgrToggle").onclick=()=>{
-  const b=document.getElementById("mgrBody");
-  const open=b.style.display==="none";
-  b.style.display=open?"block":"none";
-  document.getElementById("mgrToggle").textContent=(open?"▾":"▸")+" フィード管理";
-};
 document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("addBtn").onclick=()=>{
@@ -834,6 +934,7 @@ document.getElementById("resetBtn").onclick=()=>{
   if(!confirm("学習データ（◎/×の判定履歴とマッチ度モデル）を消去する。フィード登録と保存済み記事は残る。実行するか？")) return;
   S.model={like:{},dis:{},likeN:0,disN:0};
   S.rated={};
+  S.genreStats={};
   if(typeof fxShown!=="undefined") fxShown.clear();
   articles.forEach(a=>a.score=scoreOf(a.title));
   articles.sort((a,b)=>b.score-a.score);
@@ -841,6 +942,7 @@ document.getElementById("resetBtn").onclick=()=>{
   buildDeck();
   save();
   renderStage();
+  if(activeGenre==="⚙管理") renderRadar();
   setStatus("学習データをリセットした。");
 };
 document.getElementById("refresh").onclick=refresh;
