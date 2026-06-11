@@ -101,6 +101,11 @@
   .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
   .empty #recArt { margin-top:16px; }
   /* saved list */
+  .saved-head { display:flex; justify-content:flex-end; margin-top:10px; }
+  .saved-head button {
+    background:none; border:1px solid rgba(208,96,79,0.5); color:rgba(208,96,79,0.7);
+    font-size:11px; padding:6px 12px; border-radius:99px; cursor:pointer;
+  }
   .art { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:13px 14px; margin-top:9px; }
   .art .top { display:flex; gap:10px; align-items:flex-start; }
   .art a { color:var(--paper); text-decoration:none; font-size:15px; line-height:1.45; font-weight:500; display:block; }
@@ -675,7 +680,8 @@ function commitRate(like){
 }
 function renderSaved(st){
   if(!S.saved.length){ st.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
-  st.innerHTML=S.saved.map((a,i)=>`
+  st.innerHTML=`<div class="saved-head"><button id="clearSaved">すべて削除（${S.saved.length}件）</button></div>`
+    + S.saved.map((a,i)=>`
     <div class="art">
       <div class="top">
         <div style="flex:1">
@@ -688,6 +694,11 @@ function renderSaved(st){
   st.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
     S.saved.splice(Number(b.dataset.i),1); save(); renderStage();
   });
+  document.getElementById("clearSaved").onclick=()=>{
+    if(confirm("保存済みの記事"+S.saved.length+"件をすべて削除する。元に戻せない。実行するか？")){
+      S.saved=[]; save(); renderStage();
+    }
+  };
 }
 
 // ── chips / feeds ──
