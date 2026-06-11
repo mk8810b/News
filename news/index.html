@@ -54,8 +54,13 @@
   .bar button:disabled { opacity:0.4; }
   .status { font-size:11px; color:var(--dim); margin:8px 2px; min-height:14px; }
   /* deck */
-  .deck-head { display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin:8px 2px 10px; }
+  .deck-head { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--dim); margin:8px 2px 10px; }
   .deck-head b { color:var(--paper); }
+  .deck-head button, .done button.undo-mini {
+    background:none; border:1px solid var(--edge); color:var(--dim);
+    font-size:11px; padding:4px 12px; border-radius:99px; cursor:pointer;
+  }
+  .done button.undo-mini { font-size:12px; padding:8px 18px; margin-bottom:16px; }
   .stack { position:relative; height:300px; }
   .dcard {
     position:absolute; inset:0; background:var(--card);
@@ -336,6 +341,7 @@ let deck = [];
 let deckStats = { yes:0, no:0 };
 let feedStatus = {};
 let activeGenre = "すべて";
+let lastRate = null;
 const fxShown = new Set();
 
 // ── storage ──
@@ -409,6 +415,15 @@ function train(title, like){
   const m=S.model;
   for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+1; }
   like?m.likeN++:m.disN++;
+}
+// trainの厳密な逆操作（Undo用）
+function untrain(title, like){
+  const m=S.model;
+  for(const f of feats(title)){
+    const tbl=like?m.like:m.dis;
+    if(tbl[f]){ tbl[f]--; if(!tbl[f]) delete tbl[f]; }
+  }
+  if(like) m.likeN=Math.max(0,m.likeN-1); else m.disN=Math.max(0,m.disN-1);
 }
 
 // ── level ──
@@ -490,6 +505,7 @@ async function refresh(){
   articles.forEach(a=>a.score=scoreOf(a.title));
   articles.sort((a,b)=>b.score-a.score);
   calibrate(articles);
+  lastRate=null;
   const fails=targets.filter(f=>feedStatus[f.id]==="fail").length;
   setStatus(articles.length+"件取得"+(fails?"（"+fails+"フィードが取得失敗）":""));
   btn.disabled=false;
@@ -532,6 +548,7 @@ function renderStage(){
         <div class="big">デッキ完了</div>
         <div class="stats"><b class="y">◎ ${deckStats.yes}</b> ／ <b class="n">× ${deckStats.no}</b><br>学習データ計 ${S.model.likeN+S.model.disN} 件</div>
         ${recAddHTML}
+        ${lastRate?'<button class="undo-mini" id="undoBtn">↩ 直前の判定を戻す</button><br>':""}
         ${remaining>0?'<button id="nextDeck">次の'+Math.min(DECK_SIZE,remaining)+'枚を引く</button>':'<div class="empty" style="padding:6px 0">在庫切れ。「記事を取得」で補充しろ。</div><button id="recArt">おすすめ記事を探す</button>'}
       </div>`;
       const nb=document.getElementById("nextDeck");
@@ -544,6 +561,8 @@ function renderStage(){
       });
       const rb=document.getElementById("recArt");
       if(rb) rb.onclick=()=>{ rb.disabled=true; rb.textContent="探索中…"; recommendArticles(); };
+      const ub=document.getElementById("undoBtn");
+      if(ub) ub.onclick=undoRate;
     } else {
       const rbHTML=S.saved.length>=5?'<button id="recArt">おすすめ記事を探す</button>':"";
       st.innerHTML=`<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。${rbHTML?"<br><br>"+rbHTML:""}</div>`;
@@ -553,7 +572,7 @@ function renderStage(){
     return;
   }
   st.innerHTML=`
-    <div class="deck-head"><span>残り <b>${deck.length}</b> / ${DECK_SIZE}</span><span>◎ ${deckStats.yes} ／ × ${deckStats.no}</span></div>
+    <div class="deck-head"><span>残り <b>${deck.length}</b> / ${DECK_SIZE}</span>${lastRate?'<button id="undoBtn">↩ 戻す</button>':""}<span>◎ ${deckStats.yes} ／ × ${deckStats.no}</span></div>
     <div class="stack">
       ${deck[1]?cardHTML(deck[1],true):""}
       ${cardHTML(deck[0],false)}
@@ -567,6 +586,8 @@ function renderStage(){
   attachSwipe(top);
   st.querySelector(".deck-acts .yes").onclick=()=>flyOut(top,true);
   st.querySelector(".deck-acts .no").onclick=()=>flyOut(top,false);
+  const ub=document.getElementById("undoBtn");
+  if(ub) ub.onclick=undoRate;
   const p = deck[0].pct ?? pct(deck[0].score);
   if(p>=85 && !fxShown.has(deck[0].hash)){
     fxShown.add(deck[0].hash);
@@ -667,15 +688,38 @@ function playMatchFx(card, p){
 }
 function commitRate(like){
   const a=deck[0]; if(!a) return;
+  const snap={a, like, popped:null, recAdded:false};
   train(a.title, like);
   S.rated[a.hash]=1;
-  if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)) recLiked[a.recFeed.url]=a.recFeed;
-  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
+  if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
+    recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
+  }
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
   S.genreStats=S.genreStats||{};
   const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
   like?gs.y++:gs.n++;
   deck.shift();
+  lastRate=snap;
+  save(); renderStage();
+}
+// 直前の判定を1段階だけ取り消す
+function undoRate(){
+  if(!lastRate) return;
+  const {a, like, popped, recAdded}=lastRate;
+  untrain(a.title, like);
+  delete S.rated[a.hash];
+  if(like){
+    const i=S.saved.findIndex(s=>s.link===a.link);
+    if(i>=0) S.saved.splice(i,1);
+    if(popped) S.saved.push(popped);
+  }
+  if(recAdded&&a.recFeed) delete recLiked[a.recFeed.url];
+  const gs=(S.genreStats||{})[a.genre];
+  if(gs){ if(like) gs.y=Math.max(0,gs.y-1); else gs.n=Math.max(0,gs.n-1); }
+  if(like) deckStats.yes=Math.max(0,deckStats.yes-1); else deckStats.no=Math.max(0,deckStats.no-1);
+  deck.unshift(a);
+  lastRate=null;
   save(); renderStage();
 }
 function renderSaved(st){
@@ -947,6 +991,7 @@ async function recommendArticles(){
   articles.forEach(a=>a.score=scoreOf(a.title));
   articles.sort((a,b)=>b.score-a.score);
   calibrate(articles);
+  lastRate=null;
   activeGenre="すべて"; renderChips();
   buildDeck(); renderStage();
   setStatus(fresh.length+"件のおすすめ記事を追加（提供元"+picks.length+"フィード）");
