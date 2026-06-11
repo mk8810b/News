@@ -124,12 +124,30 @@
   .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
   .empty #recArt { margin-top:16px; }
   /* saved list */
-  .saved-head { display:flex; justify-content:flex-end; margin-top:10px; }
-  .saved-head button {
-    background:none; border:1px solid rgba(208,96,79,0.5); color:rgba(208,96,79,0.7);
+  .col-head { display:flex; gap:6px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .col-head .rt {
+    background:none; border:1px solid var(--edge); color:var(--dim);
+    font-size:11px; padding:5px 10px; border-radius:99px; cursor:pointer;
+  }
+  .col-head .rt.on { border-color:var(--accent); color:var(--accent); }
+  .col-head .rt.zero { opacity:0.45; }
+  .col-head #clearSaved {
+    margin-left:auto; background:none; border:1px solid rgba(208,96,79,0.5); color:rgba(208,96,79,0.7);
     font-size:11px; padding:6px 12px; border-radius:99px; cursor:pointer;
   }
+  .rbadge {
+    display:inline-block; font-size:10px; font-weight:800; letter-spacing:0.08em;
+    padding:1px 7px; border-radius:6px; margin-right:6px; vertical-align:middle;
+  }
+  .rbadge.ssr { background:linear-gradient(135deg,#ff5e5e,#ffd25e,#5effa0,#5ec8ff,#b15eff); color:#1A1408; }
+  .rbadge.sr { background:var(--accent); color:#1A1408; }
+  .rbadge.r { background:#9BA8B5; color:#1A1408; }
+  .rbadge.n { background:var(--edge); color:var(--dim); }
   .art { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:13px 14px; margin-top:9px; }
+  .art.ssr { border-color:transparent; background:
+    linear-gradient(var(--card),var(--card)) padding-box,
+    linear-gradient(135deg,#ff5e5e,#ffd25e,#5effa0,#5ec8ff,#b15eff) border-box; }
+  .art.sr { border-color:rgba(224,164,53,0.6); }
   .art .top { display:flex; gap:10px; align-items:flex-start; }
   .art a { color:var(--paper); text-decoration:none; font-size:15px; line-height:1.45; font-weight:500; display:block; }
   .art .sub { font-size:11px; color:var(--dim); margin-top:5px; }
@@ -392,6 +410,7 @@ let deckStats = { yes:0, no:0 };
 let feedStatus = {};
 let activeGenre = "すべて";
 let lastRate = null;
+let savedFilter = "all";
 const fxShown = new Set();
 
 // ── sound / haptics ──
@@ -506,6 +525,14 @@ function scoreOf(title){
   return (s/n)*(n/(n+4));
 }
 function pct(score){ return Math.max(1, Math.min(99, Math.round(100/(1+Math.exp(-score*2.2))))); }
+// 保存記事のレア度判定（保存時のpctが基準。pct未記録の旧データは"N"扱い）
+function rarityOf(p){
+  if(p==null) return "N";
+  if(p>=95) return "SSR";
+  if(p>=85) return "SR";
+  if(p>=70) return "R";
+  return "N";
+}
 // 表示用%の確定: バッチ中央値で中心化した絶対スコア＋バッチ内順位の合成。
 // 中央値基準にすることで、◎/×どちらかに偏った学習でモデル全体が
 // 正負に寄っても表示%の分布が潰れない（×ばかり押しても上位は高%になる）
@@ -878,7 +905,7 @@ function commitRate(like){
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
   }
-  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,pct:a.pct??pct(a.score)}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
   S.genreStats=S.genreStats||{};
   const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
@@ -922,17 +949,38 @@ function undoRate(){
 }
 function renderSaved(st){
   if(!S.saved.length){ st.innerHTML='<div class="empty">保存済みの記事はまだない。<br>◎を付けた記事がここに溜まる。</div>'; return; }
-  st.innerHTML=`<div class="saved-head"><button id="clearSaved">すべて削除（${S.saved.length}件）</button></div>`
-    + S.saved.map((a,i)=>`
-    <div class="art">
+
+  const rarities=["SSR","SR","R","N"];
+  const counts={SSR:0,SR:0,R:0,N:0};
+  S.saved.forEach(a=>counts[rarityOf(a.pct)]++);
+
+  const headBtns=['<button class="rt all '+(savedFilter==="all"?"on":"")+'" data-r="all">すべて '+S.saved.length+'件</button>']
+    .concat(rarities.map(r=>`<button class="rt ${r.toLowerCase()} ${savedFilter===r?"on":""} ${counts[r]?"":"zero"}" data-r="${r}">${r} ${counts[r]}</button>`));
+
+  const indexed=S.saved.map((a,i)=>({a,i})).filter(({a})=>savedFilter==="all"||rarityOf(a.pct)===savedFilter);
+
+  const list=indexed.length
+    ? indexed.map(({a,i})=>{
+      const r=rarityOf(a.pct);
+      return `
+    <div class="art ${r.toLowerCase()}">
       <div class="top">
         <div style="flex:1">
-          <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+          <a href="${esc(a.link)}" target="_blank" rel="noopener"><span class="rbadge ${r.toLowerCase()}">${r}</span>${esc(a.title)}</a>
           <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
         </div>
         <button class="del" data-i="${i}">×</button>
       </div>
-    </div>`).join("");
+    </div>`;
+    }).join("")
+    : '<div class="empty">このレア度の記事はまだない。</div>';
+
+  st.innerHTML=`<div class="col-head">${headBtns.join("")}<button id="clearSaved">すべて削除（${S.saved.length}件）</button></div>`
+    + list;
+
+  st.querySelectorAll(".rt").forEach(b=>b.onclick=()=>{
+    savedFilter=b.dataset.r; renderStage();
+  });
   st.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
     S.saved.splice(Number(b.dataset.i),1); save(); renderStage();
   });
