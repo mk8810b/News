@@ -1075,17 +1075,37 @@ function topKeywords(n){
   if(entries.length<n) entries=Object.entries(cnt);
   return entries.sort((a,b)=>b[1]-a[1]).slice(0,n).map(e=>e[0]);
 }
-// 在庫切れ時: 学習傾向からおすすめフィードを探し、その場で記事を取得してデッキに追加する
+// 頻出語上位poolSize語からランダムにn語選ぶ（毎回違う検索になる）
+function sampleKeywords(n, poolSize=8){
+  const pool=topKeywords(poolSize);
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  return pool.slice(0,n);
+}
+// 在庫切れ時: 学習傾向からおすすめフィードを探し、その場で記事を取得してデッキに追加する。
+// 探索済みフィードはS.recSeenに記録して次回は除外し、押すたびに別のフィードへ掘り進む
 async function recommendArticles(){
-  if(S.saved.length<5){ setStatus("学習データ不足。◎を5件以上溜めてから再実行しろ。"); return; }
+  if(S.saved.length<5){ setStatus("学習データ不足。◎を5件以上溜めてから再実行しろ。"); renderStage(); return; }
   setStatus("おすすめフィードを分析中…");
-  const kws=topKeywords(3);
+  S.recSeen=S.recSeen||{};
+  const now=Date.now();
+  for(const u of Object.keys(S.recSeen)) if(now-S.recSeen[u]>7*24*3600000) delete S.recSeen[u];
+  const kws=sampleKeywords(3);
+  const gkw=(GENRE_KW[topGenre()]||[])[0];
+  if(gkw&&!kws.includes(gkw)) kws.push(gkw);
   const lists=await Promise.all(kws.map(k=>feedlySearch(k)));
-  const seen=new Set(S.feeds.map(f=>f.url)); const cands=[];
-  for(const r of lists){ if(r) for(const x of r){ if(!seen.has(x.url)&&!cands.some(c=>c.url===x.url)) cands.push(x); } }
-  if(!cands.length){ setStatus("おすすめフィードが見つからない。時間を置いて再試行しろ。"); return; }
+  const inFeeds=new Set(S.feeds.map(f=>f.url)); const all=[];
+  for(const r of lists){ if(r) for(const x of r){ if(!inFeeds.has(x.url)&&!all.some(c=>c.url===x.url)) all.push(x); } }
+  let cands=all.filter(c=>!S.recSeen[c.url]);
+  if(!cands.length&&all.length){
+    // 未探索の候補が尽きたら、古い探索履歴の半分を解放して再利用（新着記事を拾い直せる）
+    const ent=Object.entries(S.recSeen).sort((a,b)=>a[1]-b[1]);
+    ent.slice(0,Math.ceil(ent.length/2)).forEach(([u])=>delete S.recSeen[u]);
+    cands=all.filter(c=>!S.recSeen[c.url]);
+  }
+  if(!cands.length){ setStatus("おすすめフィードが見つからない。◎を増やすと検索語彙が広がる。"); save(); renderStage(); return; }
   rankResults(cands, topGenre());
   const picks=cands.slice(0,4).map(c=>({ name:c.title.slice(0,30), url:c.url, genre:inferGenre(c.title+" "+c.desc+" "+c.topics) }));
+  picks.forEach(p=>S.recSeen[p.url]=now);
   setStatus("おすすめ記事を取得中…");
   const results=await Promise.all(picks.map(async p=>{
     const items=await raceFirst(PROXIES.map(px=>px(p.url)), 6500, async res=>{
@@ -1096,7 +1116,7 @@ async function recommendArticles(){
   }));
   const seenH=new Set(articles.map(a=>a.hash));
   const fresh=results.flat().filter(a=>!S.rated[a.hash]&&!seenH.has(a.hash)&&seenH.add(a.hash));
-  if(!fresh.length){ setStatus("新しいおすすめ記事が見つからない。"); return; }
+  if(!fresh.length){ setStatus("このフィード群に新着なし。もう一度押すと別のフィードを探す。"); save(); renderStage(); return; }
   articles.push(...fresh);
   articles.forEach(a=>a.score=scoreOf(a.title));
   sortArticles();
@@ -1104,8 +1124,8 @@ async function recommendArticles(){
   lastRate=null;
   activeGenre="すべて"; renderChips();
   buildDeck(); renderStage();
-  setStatus(fresh.length+"件のおすすめ記事を追加（提供元"+picks.length+"フィード）");
-  saveArticles();
+  setStatus("「"+kws.join("」「")+"」で探索: "+fresh.length+"件追加（提供元"+picks.length+"フィード）");
+  save(); saveArticles();
 }
 document.getElementById("recBtn").onclick=async()=>{
   if(S.saved.length<5){ renderResults([], "学習データ不足。◎を5件以上溜めてから再実行しろ。"); return; }
