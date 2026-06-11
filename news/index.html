@@ -44,6 +44,7 @@
     box-shadow:0 4px 16px rgba(0,0,0,0.5);
   }
   .badge.error { display:block; background:#2A1714; color:var(--neg); border:1px solid rgba(208,96,79,0.5); }
+  .badge.gold { display:block; background:#2A2310; color:var(--accent); border:1px solid rgba(224,164,53,0.5); }
   .chips { display:flex; gap:7px; overflow-x:auto; padding:14px 0 4px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .chips::-webkit-scrollbar { display:none; }
   .chip {
@@ -76,6 +77,12 @@
     will-change:transform; cursor:grab;
   }
   .dcard.back { transform:scale(0.95) translateY(10px); opacity:0.55; pointer-events:none; }
+  .dcard.back.reach { border-color:rgba(224,164,53,0.7); animation:reach-glow 1.1s ease-in-out infinite; }
+  @keyframes reach-glow {
+    0%,100% { box-shadow:0 0 6px 1px rgba(224,164,53,0.25); }
+    50% { box-shadow:0 0 22px 6px rgba(224,164,53,0.7); }
+  }
+  @media (prefers-reduced-motion: reduce) { .dcard.back.reach { animation:none; } }
   .dcard .score {
     font-family:Georgia,serif; font-size:30px; font-weight:700; color:var(--accent);
     font-variant-numeric:tabular-nums;
@@ -134,6 +141,12 @@
   .radar-title { font-size:13px; font-weight:700; color:var(--accent); margin-bottom:6px; }
   .radar-sec svg { width:100%; height:auto; display:block; }
   .radar-note { font-size:11px; color:var(--dim); text-align:center; margin-top:4px; }
+  .ach-sec { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:14px; margin-bottom:18px; }
+  .ach-row { display:flex; gap:8px; font-size:12px; padding:6px 2px; border-bottom:1px solid rgba(42,50,59,0.5); }
+  .ach-row:last-child { border-bottom:none; }
+  .ach-row .nm { font-weight:600; }
+  .ach-row.locked { color:var(--dim); opacity:0.55; }
+  .ach-row .ds { color:var(--dim); flex:1; }
   .feed-row { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(42,50,59,0.5); font-size:13px; }
   .dot { flex:0 0 8px; width:8px; height:8px; border-radius:99px; background:var(--dim); }
   .dot.ok { background:var(--pos); } .dot.fail { background:var(--neg); }
@@ -283,6 +296,10 @@
       <div id="radarBox"></div>
       <div class="radar-note" id="radarNote"></div>
     </div>
+    <div class="ach-sec">
+      <div class="radar-title">実績 <span id="achCount"></span></div>
+      <div id="achList"></div>
+    </div>
     <div id="feedList"></div>
     <div class="add" style="margin-top:16px">
       <select id="searchGenre"></select>
@@ -301,6 +318,7 @@
       <button id="exportBtn">データを書き出す</button>
       <button id="importBtn">データを読み込む</button>
       <button id="resetBtn">学習をリセット</button>
+      <button id="sndBtn"></button>
     </div>
   </div>
 </div>
@@ -314,6 +332,20 @@ const PROXIES = [
   u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
 ];
 const GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+const ACH_DEFS=[
+  {id:"first_like", name:"はじめての◎", desc:"初めて記事に◎を付けた"},
+  {id:"first_big", name:"初BIG", desc:"BIG MATCHを初めて引いた"},
+  {id:"first_prem", name:"虹の向こう", desc:"PREMIUM MATCHを初めて引いた"},
+  {id:"prem3", name:"虹コレクター", desc:"PREMIUM MATCHを累計3回引いた"},
+  {id:"streak10", name:"全部好き", desc:"◎を10連続で付けた"},
+  {id:"streak10n", name:"辛口審査員", desc:"×を10連続で付けた"},
+  {id:"judge100", name:"百人組手", desc:"累計100判定を達成"},
+  {id:"judge1000", name:"千本ノック", desc:"累計1000判定を達成"},
+  {id:"all_genres", name:"全ジャンル制覇", desc:"全10ジャンルで判定した"},
+  {id:"night", name:"草木も眠る鑑定士", desc:"深夜2〜4時に判定した"},
+  {id:"feeds20", name:"フィード収集家", desc:"フィードを20本登録した"},
+  {id:"purge", name:"断捨離", desc:"保存記事を一括削除した"},
+];
 const GENRE_KW = {
   "テック/AI":["テクノロジー","ai","tech","it"],
   "科学":["科学","サイエンス","science"],
@@ -351,6 +383,8 @@ let S = {
   rated: {},
   saved: [],
   genreStats: {},
+  ach: {},
+  stats: { streak:0, big:0, prem:0 },
 };
 let articles = [];
 let deck = [];
@@ -360,12 +394,48 @@ let activeGenre = "すべて";
 let lastRate = null;
 const fxShown = new Set();
 
+// ── sound / haptics ──
+let AC=null;
+function snd(name){
+  if(S.sound===false) return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==="suspended") AC.resume();
+    const t=AC.currentTime;
+    const tone=(f,start,dur,type="square",g=0.04)=>{
+      const o=AC.createOscillator(), v=AC.createGain();
+      o.type=type; o.frequency.value=f;
+      v.gain.setValueAtTime(g,t+start);
+      v.gain.exponentialRampToValueAtTime(0.0001,t+start+dur);
+      o.connect(v); v.connect(AC.destination);
+      o.start(t+start); o.stop(t+start+dur);
+    };
+    if(name==="yes") tone(660,0,0.07,"triangle",0.03);
+    else if(name==="no") tone(220,0,0.08,"triangle",0.025);
+    else if(name==="reach") [392,494,587].forEach((f,i)=>tone(f,i*0.09,0.1,"square",0.03));
+    else if(name==="big") [523,659,784,1047].forEach((f,i)=>tone(f,i*0.1,0.18,"square",0.045));
+    else if(name==="premium"){ [523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,i*0.09,0.22,"sawtooth",0.04)); tone(2093,0.6,0.5,"sine",0.03); }
+    else if(name==="unlock") [880,1109,1319].forEach((f,i)=>tone(f,i*0.08,0.25,"sine",0.04));
+  }catch(e){}
+}
+function buzz(p){ if(S.sound===false) return; try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
+
 // ── storage ──
-function showBadge(t, ok){
+function showBadge(t, ok, gold){
   if(ok) return;
   const b=document.getElementById("badge");
-  b.textContent=t; b.className="badge error";
+  b.textContent=t; b.className=gold?"badge gold":"badge error";
   clearTimeout(showBadge._t); showBadge._t=setTimeout(()=>b.className="badge",3000);
+}
+// ── achievements ──
+function unlock(id){
+  S.ach=S.ach||{};
+  if(S.ach[id]) return;
+  S.ach[id]=Date.now();
+  const d=ACH_DEFS.find(x=>x.id===id);
+  save();
+  showBadge("🏆 実績解除「"+(d?d.name:id)+"」", false, true);
+  snd("unlock"); buzz(30);
 }
 function load(){
   try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); }
@@ -570,11 +640,21 @@ function setStatus(t){ document.getElementById("status").textContent=t; }
 function buildDeck(){
   const pool=articles.filter(a=>!S.rated[a.hash]&&(activeGenre==="すべて"||a.genre===activeGenre));
   deck=pool.slice(0,DECK_SIZE);
+  // スコア順のままだと次のカードが読めてリーチ予告が成立しないため、デッキ内はランダム順
+  for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
   deckStats={yes:0,no:0};
+}
+// リーチ予告の抽選（カードごとに一度だけ）: 高マッチは85%で点灯、低マッチも15%でガセ点灯
+function omenOf(a){
+  if(a.omen===undefined){
+    const high=(a.pct??pct(a.score))>=85;
+    a.omen=Math.random()<(high?0.85:0.15);
+  }
+  return a.omen;
 }
 function esc(s){ return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function cardHTML(a, back){
-  return `<div class="dcard ${back?"back":""}" data-h="${a.hash}">
+  return `<div class="dcard ${back?"back":""}${back&&omenOf(a)?" reach":""}" data-h="${a.hash}">
     <div class="ov yes">◎ 興味あり</div>
     <div class="ov no">× 興味なし</div>
     <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
@@ -611,6 +691,7 @@ function renderStage(){
       st.querySelectorAll(".rec-add .addF").forEach(b=>b.onclick=()=>{
         const f=pend[Number(b.dataset.i)];
         S.feeds.push({ id:"u"+Date.now(), genre:f.genre, name:f.name, url:f.url });
+        if(S.feeds.length>=20) unlock("feeds20");
         save(); renderFeeds();
         b.disabled=true; b.textContent="追加済";
       });
@@ -647,6 +728,10 @@ function renderStage(){
   if(p>=85 && !fxShown.has(deck[0].hash)){
     fxShown.add(deck[0].hash);
     playMatchFx(top, p);
+  }
+  if(deck[1] && omenOf(deck[1])===true && !deck[1].omenPlayed){
+    deck[1].omenPlayed=true;
+    snd("reach");
   }
 }
 function attachSwipe(card){
@@ -713,11 +798,17 @@ function flyOut(card, like, dy=0){
   card.style.transition="transform .28s ease, opacity .28s";
   card.style.transform=`translate(${like?120:-120}vw,${dy}px) rotate(${like?22:-22}deg)`;
   card.querySelector(like?".ov.yes":".ov.no").style.opacity=1;
+  snd(like?"yes":"no"); buzz(15);
   setTimeout(()=>commitRate(like),230);
 }
 function playMatchFx(card, p){
-  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const premium = p>=95;
+  S.stats=S.stats||{streak:0,big:0,prem:0};
+  if(premium){ S.stats.prem++; unlock("first_prem"); if(S.stats.prem>=3) unlock("prem3"); }
+  else { S.stats.big++; unlock("first_big"); }
+  save();
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  snd(premium?"premium":"big"); buzz(premium?[80,50,80,50,160]:[60,40,60]);
   card.classList.add(premium?"fx-premium":"fx-big");
 
   // スコアのロールアップ（スロットのリール風カウントアップ）
@@ -791,6 +882,20 @@ function commitRate(like){
   like?gs.y++:gs.n++;
   deck.shift();
   lastRate=snap;
+
+  // ── 実績判定 ──
+  S.stats=S.stats||{streak:0,big:0,prem:0};
+  S.stats.streak = like ? (S.stats.streak>0?S.stats.streak+1:1) : (S.stats.streak<0?S.stats.streak-1:-1);
+  if(like) unlock("first_like");
+  if(S.stats.streak>=10) unlock("streak10");
+  else if(S.stats.streak<=-10) unlock("streak10n");
+  const judgeTotal=S.model.likeN+S.model.disN;
+  if(judgeTotal>=100) unlock("judge100");
+  if(judgeTotal>=1000) unlock("judge1000");
+  if(GENRES.every(g=>{const st=(S.genreStats||{})[g]; return st&&(st.y+st.n)>0;})) unlock("all_genres");
+  const h=new Date().getHours();
+  if(h>=2&&h<4) unlock("night");
+
   save(); renderStage();
 }
 // 直前の判定を1段階だけ取り消す
@@ -830,7 +935,7 @@ function renderSaved(st){
   });
   document.getElementById("clearSaved").onclick=()=>{
     if(confirm("保存済みの記事"+S.saved.length+"件をすべて削除する。元に戻せない。実行するか？")){
-      S.saved=[]; save(); renderStage();
+      S.saved=[]; unlock("purge"); save(); renderStage();
     }
   };
 }
@@ -877,6 +982,7 @@ function updateView(){
     bar.style.display="none";
     status.style.display="none";
     renderRadar();
+    renderAch();
   } else {
     mgr.style.display="none";
     stage.style.display="";
@@ -963,6 +1069,21 @@ function renderRadar(){
 
   box.innerHTML=`<svg viewBox="0 0 320 260" xmlns="http://www.w3.org/2000/svg">${grid}${data}${labels}</svg>`;
   note.textContent=`判定${total}件 ・ 最も好み: ${GENRES[maxIdx]}`;
+}
+
+// ── achievements ──
+function renderAch(){
+  const list=document.getElementById("achList");
+  const cnt=document.getElementById("achCount");
+  S.ach=S.ach||{};
+  const unlocked=ACH_DEFS.filter(d=>S.ach[d.id]).length;
+  cnt.textContent=`${unlocked}/${ACH_DEFS.length}`;
+  list.innerHTML=ACH_DEFS.map(d=>{
+    if(S.ach[d.id]){
+      return `<div class="ach-row"><span class="nm">🏆 ${esc(d.name)}</span><span class="ds">${esc(d.desc)}</span></div>`;
+    }
+    return `<div class="ach-row locked"><span class="nm">🔒 ？？？</span><span class="ds"></span></div>`;
+  }).join("");
 }
 
 // ── feed search & recommend ──
@@ -1055,6 +1176,7 @@ function renderResults(results, note){
     const r=results[Number(b.dataset.i)];
     S.feeds.push({ id:"u"+Date.now(), genre:document.getElementById("searchGenre").value,
                    name:r.title.slice(0,30), url:r.url });
+    if(S.feeds.length>=20) unlock("feeds20");
     save(); renderFeeds();
     b.disabled=true; b.textContent="追加済";
   });
@@ -1174,6 +1296,7 @@ document.getElementById("addBtn").onclick=()=>{
   const u=document.getElementById("addUrl").value.trim();
   if(!n||!u||!/^https?:\/\//.test(u)){ showBadge("⚠ 名前とURLを正しく入力",false); return; }
   S.feeds.push({ id:"u"+Date.now(), genre:g, name:n, url:u });
+  if(S.feeds.length>=20) unlock("feeds20");
   document.getElementById("addName").value=""; document.getElementById("addUrl").value="";
   save(); renderFeeds();
 };
@@ -1202,6 +1325,16 @@ document.getElementById("resetBtn").onclick=()=>{
   if(activeGenre==="⚙管理") renderRadar();
   setStatus("学習データをリセットした。");
 };
+function syncSndBtn(){
+  const b=document.getElementById("sndBtn");
+  b.textContent = S.sound===false ? "🔇 効果音・振動" : "🔊 効果音・振動";
+}
+document.getElementById("sndBtn").onclick=()=>{
+  S.sound = S.sound===false ? true : false;
+  save();
+  syncSndBtn();
+  if(S.sound!==false) snd("yes");
+};
 document.getElementById("refresh").onclick=refresh;
 
 // ── PC対応: キーボード操作 ──
@@ -1216,6 +1349,7 @@ document.addEventListener("keydown",e=>{
 
 // ── init ──
 load();
+syncSndBtn();
 const cached=loadArticles();
 renderChips(); renderFeeds(); renderStage();
 if(S.feeds.length && cached<10) refresh();
