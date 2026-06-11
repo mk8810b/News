@@ -93,11 +93,13 @@
   .done .big { font-family:Georgia,serif; font-size:30px; color:var(--accent); }
   .done .stats { font-size:14px; color:var(--dim); margin:14px 0 22px; line-height:1.9; }
   .done .stats b.y { color:var(--pos); } .done .stats b.n { color:var(--neg); }
-  .done button {
+  .done button, #recArt {
     padding:14px 30px; border-radius:12px; border:none; background:var(--accent);
     color:#1A1408; font-size:15px; font-weight:700; cursor:pointer;
   }
+  .done button:disabled, #recArt:disabled { background:var(--edge); color:var(--dim); }
   .empty { text-align:center; color:var(--dim); font-size:13px; padding:34px 0; line-height:1.8; }
+  .empty #recArt { margin-top:16px; }
   /* saved list */
   .art { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:13px 14px; margin-top:9px; }
   .art .top { display:flex; gap:10px; align-items:flex-start; }
@@ -137,6 +139,8 @@
   }
   .res-row .addF:disabled { background:var(--edge); color:var(--dim); }
   .res-note { font-size:11px; color:var(--dim); padding:10px 2px 2px; }
+  .rec-add { text-align:left; margin:0 0 22px; }
+  .rec-add-t { font-size:12px; color:var(--dim); margin-bottom:4px; }
   .io { display:flex; gap:8px; margin-top:18px; }
   .io button {
     flex:1; padding:10px 0; border-radius:9px; font-size:12px;
@@ -501,7 +505,7 @@ function cardHTML(a, back){
     <div class="ov no">× 興味なし</div>
     <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
-    <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+    <div class="sub"><span class="genre">${a.rec?"★":""}${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
   </div>`;
 }
 function renderStage(){
@@ -511,15 +515,35 @@ function renderStage(){
   if(!deck.length){
     const remaining=articles.filter(a=>!S.rated[a.hash]&&(activeGenre==="すべて"||a.genre===activeGenre)).length;
     if(deckStats.yes+deckStats.no>0){
+      const pend=Object.values(recLiked).filter(f=>!S.feeds.some(x=>x.url===f.url));
+      const recAddHTML=pend.length?`<div class="rec-add">
+        <div class="rec-add-t">◎を付けたおすすめ記事の提供元:</div>
+        ${pend.map((f,i)=>`<div class="res-row">
+          <div class="info"><div class="t">${esc(f.name)}</div><div class="m">${esc(f.genre)} ・ ${esc(f.url)}</div></div>
+          <button class="addF" data-i="${i}">追加</button>
+        </div>`).join("")}
+      </div>`:"";
       st.innerHTML=`<div class="done">
         <div class="big">デッキ完了</div>
         <div class="stats"><b class="y">◎ ${deckStats.yes}</b> ／ <b class="n">× ${deckStats.no}</b><br>学習データ計 ${S.model.likeN+S.model.disN} 件</div>
-        ${remaining>0?'<button id="nextDeck">次の'+Math.min(DECK_SIZE,remaining)+'枚を引く</button>':'<div class="empty" style="padding:6px 0">在庫切れ。「記事を取得」で補充しろ。</div>'}
+        ${recAddHTML}
+        ${remaining>0?'<button id="nextDeck">次の'+Math.min(DECK_SIZE,remaining)+'枚を引く</button>':'<div class="empty" style="padding:6px 0">在庫切れ。「記事を取得」で補充しろ。</div><button id="recArt">おすすめ記事を探す</button>'}
       </div>`;
       const nb=document.getElementById("nextDeck");
       if(nb) nb.onclick=()=>{ buildDeck(); renderStage(); };
+      st.querySelectorAll(".rec-add .addF").forEach(b=>b.onclick=()=>{
+        const f=pend[Number(b.dataset.i)];
+        S.feeds.push({ id:"u"+Date.now(), genre:f.genre, name:f.name, url:f.url });
+        save(); renderFeeds();
+        b.disabled=true; b.textContent="追加済";
+      });
+      const rb=document.getElementById("recArt");
+      if(rb) rb.onclick=()=>{ rb.disabled=true; rb.textContent="探索中…"; recommendArticles(); };
     } else {
-      st.innerHTML='<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。</div>';
+      const rbHTML=S.saved.length>=5?'<button id="recArt">おすすめ記事を探す</button>':"";
+      st.innerHTML=`<div class="empty">表示できる記事がない。<br>「記事を取得」を押すか、ジャンルを切り替えろ。${rbHTML?"<br><br>"+rbHTML:""}</div>`;
+      const rb=document.getElementById("recArt");
+      if(rb) rb.onclick=()=>{ rb.disabled=true; rb.textContent="探索中…"; recommendArticles(); };
     }
     return;
   }
@@ -640,6 +664,7 @@ function commitRate(like){
   const a=deck[0]; if(!a) return;
   train(a.title, like);
   S.rated[a.hash]=1;
+  if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)) recLiked[a.recFeed.url]=a.recFeed;
   if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}); if(S.saved.length>200) S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
   S.genreStats=S.genreStats||{};
@@ -776,6 +801,21 @@ function renderRadar(){
 }
 
 // ── feed search & recommend ──
+const recLiked={};
+function topGenre(){
+  const gs=S.genreStats||{}; let best=null, bv=-1;
+  for(const g of GENRES){
+    const st=gs[g]; if(!st) continue;
+    const t=st.y+st.n, v=t?((st.y+0.5)/(t+1))*(t/(t+3)):0;
+    if(v>bv){ bv=v; best=g; }
+  }
+  return best||(GENRES.includes(activeGenre)?activeGenre:GENRES[0]);
+}
+function inferGenre(text){
+  const t=text.toLowerCase();
+  for(const g of GENRES){ if((GENRE_KW[g]||[]).some(k=>t.includes(k.toLowerCase()))) return g; }
+  return topGenre();
+}
 async function feedlySearch(q){
   const url="https://cloud.feedly.com/v3/search/feeds?count=20&locale=ja&query="+encodeURIComponent(q);
   return raceFirst([url, ...PROXIES.map(p=>p(url))], 6000, async res=>{
@@ -869,6 +909,36 @@ function topKeywords(n){
   let entries=Object.entries(cnt).filter(([w,c])=>c>=2);
   if(entries.length<n) entries=Object.entries(cnt);
   return entries.sort((a,b)=>b[1]-a[1]).slice(0,n).map(e=>e[0]);
+}
+// 在庫切れ時: 学習傾向からおすすめフィードを探し、その場で記事を取得してデッキに追加する
+async function recommendArticles(){
+  if(S.saved.length<5){ setStatus("学習データ不足。◎を5件以上溜めてから再実行しろ。"); return; }
+  setStatus("おすすめフィードを分析中…");
+  const kws=topKeywords(3);
+  const lists=await Promise.all(kws.map(k=>feedlySearch(k)));
+  const seen=new Set(S.feeds.map(f=>f.url)); const cands=[];
+  for(const r of lists){ if(r) for(const x of r){ if(!seen.has(x.url)&&!cands.some(c=>c.url===x.url)) cands.push(x); } }
+  if(!cands.length){ setStatus("おすすめフィードが見つからない。時間を置いて再試行しろ。"); return; }
+  rankResults(cands, topGenre());
+  const picks=cands.slice(0,4).map(c=>({ name:c.title.slice(0,30), url:c.url, genre:inferGenre(c.title+" "+c.desc+" "+c.topics) }));
+  setStatus("おすすめ記事を取得中…");
+  const results=await Promise.all(picks.map(async p=>{
+    const items=await raceFirst(PROXIES.map(px=>px(p.url)), 6500, async res=>{
+      const list=parseFeed(await res.text(), p);
+      return list.length?list:null;
+    });
+    return (items||[]).map(a=>Object.assign(a,{rec:true,recFeed:p}));
+  }));
+  const seenH=new Set(articles.map(a=>a.hash));
+  const fresh=results.flat().filter(a=>!S.rated[a.hash]&&!seenH.has(a.hash)&&seenH.add(a.hash));
+  if(!fresh.length){ setStatus("新しいおすすめ記事が見つからない。"); return; }
+  articles.push(...fresh);
+  articles.forEach(a=>a.score=scoreOf(a.title));
+  articles.sort((a,b)=>b.score-a.score);
+  calibrate(articles);
+  activeGenre="すべて"; renderChips();
+  buildDeck(); renderStage();
+  setStatus(fresh.length+"件のおすすめ記事を追加（提供元"+picks.length+"フィード）");
 }
 document.getElementById("recBtn").onclick=async()=>{
   if(S.saved.length<5){ renderResults([], "学習データ不足。◎を5件以上溜めてから再実行しろ。"); return; }
