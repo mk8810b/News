@@ -66,7 +66,7 @@
     position:absolute; inset:0; background:var(--card);
     border:1px solid var(--edge); border-radius:18px; padding:20px 18px;
     display:flex; flex-direction:column; touch-action:none;
-    will-change:transform;
+    will-change:transform; cursor:grab;
   }
   .dcard.back { transform:scale(0.95) translateY(10px); opacity:0.55; pointer-events:none; }
   .dcard .score {
@@ -292,6 +292,7 @@
 
 <script>
 const KEY = "news-app-v1";
+const CACHE_KEY = "news-articles-v1";
 const PROXIES = [
   u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
   u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
@@ -368,6 +369,28 @@ function save(){
     localStorage.setItem(KEY,j);
     if(localStorage.getItem(KEY)!==j) showBadge("⚠ 保存に失敗",false);
   }catch(e){ showBadge("⚠ 保存に失敗",false); }
+}
+// 未判定記事をキャッシュし、再訪時に取得待ちなしで表示できるようにする
+function saveArticles(){
+  try{
+    const list=articles.slice(0,300).map(a=>({hash:a.hash,title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date}));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), list}));
+  }catch(e){ /* 容量超過時は無視 */ }
+}
+// 24時間以内のキャッシュがあればarticlesへ復元し、復元件数を返す
+function loadArticles(){
+  try{
+    const r=localStorage.getItem(CACHE_KEY);
+    if(!r) return 0;
+    const {ts, list}=JSON.parse(r);
+    if(!ts || Date.now()-ts >= 24*3600*1000){ localStorage.removeItem(CACHE_KEY); return 0; }
+    articles=list.filter(a=>!S.rated[a.hash]);
+    articles.forEach(a=>a.score=scoreOf(a.title));
+    articles.sort((a,b)=>b.score-a.score);
+    calibrate(articles);
+    buildDeck();
+    return articles.length;
+  }catch(e){ localStorage.removeItem(CACHE_KEY); return 0; }
 }
 
 // ── learning ──
@@ -510,6 +533,7 @@ async function refresh(){
   setStatus(articles.length+"件取得"+(fails?"（"+fails+"フィードが取得失敗）":""));
   btn.disabled=false;
   buildDeck(); renderStage(); renderFeeds();
+  saveArticles();
 }
 function setStatus(t){ document.getElementById("status").textContent=t; }
 
@@ -618,6 +642,41 @@ function attachSwipe(card){
       card.querySelectorAll(".ov").forEach(o=>o.style.opacity=0);
     }
   });
+  // ── PC対応: マウスドラッグ ──
+  let pActive=false, pDragged=false, px=0, py=0, pdx=0, pdy=0;
+  card.addEventListener("pointerdown",e=>{
+    if(e.pointerType==="touch") return; // タッチは既存ハンドラに任せる
+    px=e.clientX; py=e.clientY; pdx=0; pdy=0; pActive=true; pDragged=false;
+    card.style.transition="none";
+    card.setPointerCapture(e.pointerId);
+  });
+  card.addEventListener("pointermove",e=>{
+    if(!pActive) return;
+    pdx=e.clientX-px; pdy=e.clientY-py;
+    if(Math.abs(pdx)>10) pDragged=true;
+    card.style.transform=`translate(${pdx}px,${pdy*0.15}px) rotate(${pdx/14}deg)`;
+    card.querySelector(".ov.yes").style.opacity=Math.max(0,Math.min(1,pdx/90));
+    card.querySelector(".ov.no").style.opacity=Math.max(0,Math.min(1,-pdx/90));
+  });
+  const pEnd=()=>{
+    if(!pActive) return; pActive=false;
+    if(pdx>90) flyOut(card,true,pdy);
+    else if(pdx<-90) flyOut(card,false,pdy);
+    else{
+      card.style.transition="transform .22s ease";
+      card.style.transform="";
+      card.querySelectorAll(".ov").forEach(o=>o.style.opacity=0);
+    }
+    if(pDragged){
+      const link=card.querySelector("a");
+      if(link){
+        const suppress=ev=>{ ev.preventDefault(); ev.stopPropagation(); link.removeEventListener("click",suppress,true); };
+        link.addEventListener("click",suppress,true);
+      }
+    }
+  };
+  card.addEventListener("pointerup",pEnd);
+  card.addEventListener("pointercancel",pEnd);
 }
 function flyOut(card, like, dy=0){
   card.style.transition="transform .28s ease, opacity .28s";
@@ -995,6 +1054,7 @@ async function recommendArticles(){
   activeGenre="すべて"; renderChips();
   buildDeck(); renderStage();
   setStatus(fresh.length+"件のおすすめ記事を追加（提供元"+picks.length+"フィード）");
+  saveArticles();
 }
 document.getElementById("recBtn").onclick=async()=>{
   if(S.saved.length<5){ renderResults([], "学習データ不足。◎を5件以上溜めてから再実行しろ。"); return; }
@@ -1073,8 +1133,21 @@ document.getElementById("resetBtn").onclick=()=>{
 };
 document.getElementById("refresh").onclick=refresh;
 
+// ── PC対応: キーボード操作 ──
+document.addEventListener("keydown",e=>{
+  const ae=document.activeElement;
+  if(ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+  const top=document.querySelector(".dcard:not(.back)");
+  if(!top) return;
+  if(e.key==="ArrowRight"){ e.preventDefault(); flyOut(top,true); }
+  else if(e.key==="ArrowLeft"){ e.preventDefault(); flyOut(top,false); }
+});
+
 // ── init ──
-load(); renderChips(); renderFeeds(); renderStage();
+load();
+const cached=loadArticles();
+renderChips(); renderFeeds(); renderStage();
+if(S.feeds.length && cached<10) refresh();
 </script>
 </body>
 </html>
