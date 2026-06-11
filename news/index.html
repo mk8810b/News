@@ -60,7 +60,7 @@
   .dcard {
     position:absolute; inset:0; background:var(--card);
     border:1px solid var(--edge); border-radius:18px; padding:20px 18px;
-    display:flex; flex-direction:column; touch-action:pan-y;
+    display:flex; flex-direction:column; touch-action:none;
     will-change:transform;
   }
   .dcard.back { transform:scale(0.95) translateY(10px); opacity:0.55; pointer-events:none; }
@@ -106,8 +106,7 @@
   .art .sub .genre { color:var(--accent); }
   .art .del { background:none; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:2px 6px; }
   /* feed manager */
-  .mgr { margin-top:26px; border-top:1px solid var(--edge); padding-top:14px; }
-  .mgr-toggle { background:none; border:none; color:var(--dim); font-size:13px; cursor:pointer; padding:6px 2px; }
+  .mgr { margin-top:26px; padding-top:14px; }
   .feed-row { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(42,50,59,0.5); font-size:13px; }
   .dot { flex:0 0 8px; width:8px; height:8px; border-radius:99px; background:var(--dim); }
   .dot.ok { background:var(--pos); } .dot.fail { background:var(--neg); }
@@ -244,9 +243,8 @@
 
 <div id="stage"><div class="empty">「記事を取得」で開始。<br>カードを右スワイプ＝◎ / 左スワイプ＝×。</div></div>
 
-<div class="mgr">
-  <button class="mgr-toggle" id="mgrToggle">▸ フィード管理</button>
-  <div id="mgrBody" style="display:none">
+<div class="mgr" style="display:none">
+  <div id="mgrBody">
     <div id="feedList"></div>
     <div class="add" style="margin-top:16px">
       <select id="searchGenre"></select>
@@ -535,7 +533,7 @@ function attachSwipe(card){
   card.addEventListener("touchmove",e=>{
     if(!active) return;
     const t=e.touches[0]; dx=t.clientX-sx; dy=t.clientY-sy;
-    if(Math.abs(dx)>Math.abs(dy)+6) e.preventDefault();
+    e.preventDefault();
     card.style.transform=`translate(${dx}px,${dy*0.15}px) rotate(${dx/14}deg)`;
     card.querySelector(".ov.yes").style.opacity=Math.max(0,Math.min(1,dx/90));
     card.querySelector(".ov.no").style.opacity=Math.max(0,Math.min(1,-dx/90));
@@ -647,13 +645,31 @@ function renderSaved(st){
 // ── chips / feeds ──
 function renderChips(){
   const c=document.getElementById("chips");
-  c.innerHTML=["すべて",...GENRES,"★保存済み"].map(g=>
+  c.innerHTML=["すべて",...GENRES,"★保存済み","⚙管理"].map(g=>
     `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}</button>`).join("");
   c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     activeGenre=b.dataset.g; renderChips();
-    if(activeGenre!=="★保存済み") buildDeck();
-    renderStage();
+    if(activeGenre!=="★保存済み"&&activeGenre!=="⚙管理") buildDeck();
+    updateView();
   });
+}
+function updateView(){
+  const mgr=document.querySelector(".mgr");
+  const stage=document.getElementById("stage");
+  const bar=document.querySelector(".bar");
+  const status=document.getElementById("status");
+  if(activeGenre==="⚙管理"){
+    mgr.style.display="block";
+    stage.style.display="none";
+    bar.style.display="none";
+    status.style.display="none";
+  } else {
+    mgr.style.display="none";
+    stage.style.display="";
+    bar.style.display="";
+    status.style.display="";
+    renderStage();
+  }
 }
 function renderFeeds(){
   const el=document.getElementById("feedList");
@@ -803,12 +819,6 @@ document.getElementById("searchBtn").onclick=async()=>{
 };
 
 // ── manager / io ──
-document.getElementById("mgrToggle").onclick=()=>{
-  const b=document.getElementById("mgrBody");
-  const open=b.style.display==="none";
-  b.style.display=open?"block":"none";
-  document.getElementById("mgrToggle").textContent=(open?"▾":"▸")+" フィード管理";
-};
 document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("addBtn").onclick=()=>{
