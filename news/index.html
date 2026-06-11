@@ -165,6 +165,17 @@
   .ach-row .nm { font-weight:600; }
   .ach-row.locked { color:var(--dim); opacity:0.55; }
   .ach-row .ds { color:var(--dim); flex:1; }
+  .cat-sec { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:14px; margin-bottom:18px; }
+  .cat-cur, .cat-sug { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+  .cat-chip {
+    display:inline-flex; align-items:center; gap:4px; font-size:12px;
+    border:1px solid var(--edge); color:var(--paper); padding:5px 10px; border-radius:99px;
+  }
+  .cat-chip button { background:none; border:none; color:var(--dim); cursor:pointer; font-size:13px; padding:0 2px; }
+  .cat-sug .cat-chip { color:var(--dim); cursor:pointer; }
+  .cat-add { display:flex; gap:8px; }
+  .cat-add input { flex:1; padding:9px 12px; border-radius:9px; border:1px solid var(--edge); background:rgba(0,0,0,0.25); color:var(--paper); font-size:13px; outline:none; }
+  .cat-add button { padding:9px 16px; border-radius:9px; border:none; background:var(--accent); color:#1A1408; font-size:13px; font-weight:700; cursor:pointer; }
   .feed-row { display:flex; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(42,50,59,0.5); font-size:13px; }
   .dot { flex:0 0 8px; width:8px; height:8px; border-radius:99px; background:var(--dim); }
   .dot.ok { background:var(--pos); } .dot.fail { background:var(--neg); }
@@ -318,6 +329,16 @@
       <div class="radar-title">実績 <span id="achCount"></span></div>
       <div id="achList"></div>
     </div>
+    <div class="cat-sec">
+      <div class="radar-title">カテゴリ</div>
+      <div class="cat-cur" id="catCur"></div>
+      <div class="res-note">候補から追加:</div>
+      <div class="cat-sug" id="catSug"></div>
+      <div class="cat-add">
+        <input type="text" id="catInput" placeholder="自由入力で追加（例: 将棋）">
+        <button id="catAddBtn">追加</button>
+      </div>
+    </div>
     <div id="feedList"></div>
     <div class="add" style="margin-top:16px">
       <select id="searchGenre"></select>
@@ -349,7 +370,9 @@ const PROXIES = [
   u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
   u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
 ];
-const GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+const DEFAULT_GENRES = ["テック/AI","科学","投資/経済","ポーカー","アニメ","エンタメ","心理学","ペット","釣り","アダルト"];
+const GENRE_SUGGEST = ["ゲーム","映画","ドラマ","料理","旅行","スポーツ","健康","ファッション","政治","国際","ビジネス","ガジェット","車/バイク","歴史","宇宙","DIY"];
+let GENRES = DEFAULT_GENRES;
 const ACH_DEFS=[
   {id:"first_like", name:"はじめての◎", desc:"初めて記事に◎を付けた"},
   {id:"first_big", name:"初BIG", desc:"BIG MATCHを初めて引いた"},
@@ -455,6 +478,11 @@ function unlock(id){
   save();
   showBadge("🏆 実績解除「"+(d?d.name:id)+"」", false, true);
   snd("unlock"); buzz(30);
+}
+// S.genres があればそれを、なければ既定ジャンル一覧をGENRESに反映する
+function applyGenres(){
+  if(S.genres && S.genres.length) GENRES=S.genres;
+  else GENRES=DEFAULT_GENRES;
 }
 function load(){
   try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); }
@@ -992,6 +1020,10 @@ function renderSaved(st){
 }
 
 // ── chips / feeds ──
+function fillGenreSelects(){
+  document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+  document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+}
 function renderChips(){
   const c=document.getElementById("chips");
   const cnt=g=>articles.filter(a=>!S.rated[a.hash]&&(g==="すべて"||a.genre===g)).length;
@@ -1034,6 +1066,7 @@ function updateView(){
     status.style.display="none";
     renderRadar();
     renderAch();
+    renderCats();
   } else {
     mgr.style.display="none";
     stage.style.display="";
@@ -1042,6 +1075,43 @@ function updateView(){
     renderStage();
   }
 }
+// ── category management ──
+function addGenreCat(name){
+  name=(name||"").trim();
+  if(!name || GENRES.includes(name) || GENRES.length>=20){ showBadge("⚠ 追加できない",false); return; }
+  GENRES.push(name);
+  S.genres=GENRES.slice();
+  save();
+  renderCats();
+  fillGenreSelects();
+  renderChips();
+}
+function removeGenreCat(name){
+  if(GENRES.length<=1){ showBadge("⚠ 追加できない",false); return; }
+  if(S.feeds.some(f=>f.genre===name)){ showBadge("⚠ このカテゴリのフィードが存在する",false); return; }
+  GENRES=GENRES.filter(g=>g!==name);
+  S.genres=GENRES.slice();
+  if(activeGenre===name) activeGenre="すべて";
+  save();
+  renderCats();
+  fillGenreSelects();
+  renderChips();
+  renderRadar();
+}
+function renderCats(){
+  const cur=document.getElementById("catCur");
+  const sug=document.getElementById("catSug");
+  cur.innerHTML=GENRES.map(g=>`<span class="cat-chip">${esc(g)}<button class="cat-del" data-g="${esc(g)}">×</button></span>`).join("");
+  cur.querySelectorAll(".cat-del").forEach(b=>b.onclick=()=>removeGenreCat(b.dataset.g));
+  const rest=GENRE_SUGGEST.filter(g=>!GENRES.includes(g));
+  sug.innerHTML=rest.map(g=>`<span class="cat-chip" data-g="${esc(g)}">＋${esc(g)}</span>`).join("");
+  sug.querySelectorAll(".cat-chip").forEach(b=>b.onclick=()=>addGenreCat(b.dataset.g));
+}
+document.getElementById("catAddBtn").onclick=()=>{
+  const inp=document.getElementById("catInput");
+  addGenreCat(inp.value);
+  inp.value="";
+};
 function renderFeeds(){
   const el=document.getElementById("feedList");
   el.innerHTML=S.feeds.map(f=>`
@@ -1339,8 +1409,6 @@ document.getElementById("searchBtn").onclick=async()=>{
 };
 
 // ── manager / io ──
-document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
-document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
 document.getElementById("addBtn").onclick=()=>{
   const g=document.getElementById("addGenre").value;
   const n=document.getElementById("addName").value.trim();
@@ -1358,7 +1426,7 @@ document.getElementById("exportBtn").onclick=async()=>{
 };
 document.getElementById("importBtn").onclick=()=>{
   const raw=prompt("書き出したデータを貼り付け:"); if(!raw) return;
-  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; save(); renderChips(); renderFeeds(); buildDeck(); renderStage(); }
+  try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; applyGenres(); fillGenreSelects(); save(); renderChips(); renderFeeds(); buildDeck(); renderStage(); }
   catch(e){ showBadge("⚠ データ形式が不正",false); }
 };
 document.getElementById("resetBtn").onclick=()=>{
@@ -1400,6 +1468,8 @@ document.addEventListener("keydown",e=>{
 
 // ── init ──
 load();
+applyGenres();
+fillGenreSelects();
 syncSndBtn();
 const cached=loadArticles();
 renderChips(); renderFeeds(); renderStage();
