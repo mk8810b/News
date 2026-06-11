@@ -139,6 +139,7 @@
     flex:1; padding:10px 0; border-radius:9px; font-size:12px;
     border:1px solid var(--edge); background:transparent; color:var(--dim); cursor:pointer;
   }
+  .io button#resetBtn { border-color:rgba(208,96,79,0.5); color:rgba(208,96,79,0.5); }
   /* match fx */
   .fx-big { animation:fx-glow-gold 0.5s ease-in-out 5; }
   .fx-premium { animation:fx-glow-rainbow 2.5s linear 1; border-color:transparent!important; }
@@ -263,6 +264,7 @@
     <div class="io">
       <button id="exportBtn">データを書き出す</button>
       <button id="importBtn">データを読み込む</button>
+      <button id="resetBtn">学習をリセット</button>
     </div>
   </div>
 </div>
@@ -827,6 +829,19 @@ document.getElementById("importBtn").onclick=()=>{
   const raw=prompt("書き出したデータを貼り付け:"); if(!raw) return;
   try{ const p=JSON.parse(raw); if(!p.feeds||!p.model) throw 0; S=p; save(); renderChips(); renderFeeds(); buildDeck(); renderStage(); }
   catch(e){ showBadge("⚠ データ形式が不正",false); }
+};
+document.getElementById("resetBtn").onclick=()=>{
+  if(!confirm("学習データ（◎/×の判定履歴とマッチ度モデル）を消去する。フィード登録と保存済み記事は残る。実行するか？")) return;
+  S.model={like:{},dis:{},likeN:0,disN:0};
+  S.rated={};
+  if(typeof fxShown!=="undefined") fxShown.clear();
+  articles.forEach(a=>a.score=scoreOf(a.title));
+  articles.sort((a,b)=>b.score-a.score);
+  calibrate(articles);
+  buildDeck();
+  save();
+  renderStage();
+  setStatus("学習データをリセットした。");
 };
 document.getElementById("refresh").onclick=refresh;
 
