@@ -570,17 +570,33 @@ function rarityOf(p){
 // 表示用%の確定: バッチ中央値で中心化した絶対スコア＋バッチ内順位の合成。
 // 中央値基準にすることで、◎/×どちらかに偏った学習でモデル全体が
 // 正負に寄っても表示%の分布が潰れない（×ばかり押しても上位は高%になる）
+// 表示%は「最近判定した記事400件の中で上位何%か」の分位写像で決める。
+// BIG(85+)が判定の約1/20、PREMIUM(95+)が約1/100で出るよう曲線を固定。
+// スコアの絶対値や学習の偏りに依存せず、出現頻度そのものを保証する
+const PCT_CURVE=[[0,3],[0.05,15],[0.5,50],[0.8,70],[0.95,85],[0.99,95],[1,99]];
+function pctFromRel(rel){
+  for(let i=1;i<PCT_CURVE.length;i++){
+    const [x0,y0]=PCT_CURVE[i-1],[x1,y1]=PCT_CURVE[i];
+    if(rel<=x1) return y0+(y1-y0)*(rel-x0)/(x1-x0);
+  }
+  return 99;
+}
+function relIn(sortedRef, sc){
+  let lo=0, eq=0;
+  for(const v of sortedRef){ if(v<sc) lo++; else if(v===sc) eq++; }
+  return (lo+eq/2)/sortedRef.length;
+}
 function calibrate(list){
-  const n=list.length;
-  if(!n) return;
-  const sorted=list.map(a=>a.score).sort((x,y)=>x-y);
-  const med=sorted[Math.floor(n/2)];
+  if(!list.length) return;
+  // 参照分布 = 判定履歴(直近400件) + 現在のプール。履歴だけだと取り尽くしで
+  // 基準が高止まりし、プールだけだと最初のデッキに当たりが集中するため混合する
+  const warm=S.seenScores&&S.seenScores.length>=30;
+  const ref=(warm?[...S.seenScores]:[]).concat(list.map(a=>a.score));
+  ref.sort((x,y)=>x-y);
   for(const a of list){
-    let lo=0, eq=0;
-    for(const s of sorted){ if(s<a.score) lo++; else if(s===a.score) eq++; }
-    const rel=(lo+eq/2)/n;
-    const abs=100/(1+Math.exp(-(a.score-med)*3.5));
-    a.pct=Math.max(1, Math.min(99, Math.round(0.6*abs+0.4*(5+rel*92))));
+    let p=Math.round(pctFromRel(relIn(ref,a.score)));
+    if(!warm) p=Math.min(84,p); // 履歴が溜まるまで当たり演出は出さない
+    a.pct=Math.max(1, Math.min(99, p));
   }
 }
 // 鮮度ボーナス: 並び順にのみ加味し、表示%（マッチ度）には影響させない
@@ -980,6 +996,9 @@ function commitRate(like){
   S.genreStats=S.genreStats||{};
   const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
   like?gs.y++:gs.n++;
+  S.seenScores=S.seenScores||[];
+  S.seenScores.push(a.score||0);
+  if(S.seenScores.length>400) S.seenScores.shift();
   deck.shift();
   lastRate=snap;
 
@@ -1013,6 +1032,7 @@ function undoRate(){
   const gs=(S.genreStats||{})[a.genre];
   if(gs){ if(like) gs.y=Math.max(0,gs.y-1); else gs.n=Math.max(0,gs.n-1); }
   if(like) deckStats.yes=Math.max(0,deckStats.yes-1); else deckStats.no=Math.max(0,deckStats.no-1);
+  if(S.seenScores&&S.seenScores.length) S.seenScores.pop();
   deck.unshift(a);
   lastRate=null;
   save(); renderStage();
@@ -1479,6 +1499,7 @@ document.getElementById("resetBtn").onclick=()=>{
   S.model={like:{},dis:{},likeN:0,disN:0};
   S.rated={};
   S.genreStats={};
+  S.seenScores=[];
   if(typeof fxShown!=="undefined") fxShown.clear();
   rescore();
   buildDeck();
