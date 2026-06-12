@@ -492,8 +492,12 @@ function applyGenres(){
   if(S.genres && S.genres.length) GENRES=S.genres;
   else GENRES=DEFAULT_GENRES;
 }
+function judgeCount(){ return (S.stats&&S.stats.judges!=null)?S.stats.judges:Math.round((S.model.likeN||0)+(S.model.disN||0)); }
 function load(){
   try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); }
+  // 旧データ移行: 判定数の整数カウンタ（学習率導入でlikeN/disNが小数になるため別管理）
+  S.stats=S.stats||{streak:0,big:0,prem:0};
+  if(S.stats.judges==null) S.stats.judges=Math.round((S.model.likeN||0)+(S.model.disN||0));
   // 旧データ移行: genreStatsが空なら、保存済み記事から◎数だけ復元する（×は復元不能）
   if((!S.genreStats || !Object.keys(S.genreStats).length) && S.saved && S.saved.length){
     S.genreStats={};
@@ -544,19 +548,22 @@ function feats(text){
 function scoreOf(title){
   const m=S.model, fs=feats(title);
   if(!fs.length || (m.likeN+m.disN)===0) return 0;
-  // 学習済みの語だけを根拠に、◎内/×内の出現率の対数オッズを取る。
-  // 件数ではなく率で比較するため◎×の件数の偏りに影響されない
-  let s=0, n=0;
+  // 適応平滑化: 学習が進むほど平滑化を緩めて判別を鋭くする（下限0.02）
+  const e=Math.max(0.02, 2/(m.likeN+m.disN+1));
+  const ws=[];
   for(const f of fs){
     const l=m.like[f]||0, d=m.dis[f]||0;
     if(l+d===0) continue;
     const rl=m.likeN?l/m.likeN:0, rd=m.disN?d/m.disN:0;
-    s += Math.log((rl+0.1)/(rd+0.1));
-    n++;
+    ws.push(Math.log((rl+e)/(rd+e)));
   }
-  if(!n) return 0;
-  // 根拠語が少ないタイトルは50%側へ縮退
-  return (s/n)*(n/(n+4));
+  if(!ws.length) return 0;
+  // 中立語に強い手掛かりが薄められないよう、寄与の大きい上位8語の調和加重平均
+  ws.sort((x,y)=>Math.abs(y)-Math.abs(x));
+  const k=Math.min(8,ws.length);
+  let sum=0, wsum=0;
+  for(let i=0;i<k;i++){ const wt=1/(i+1); sum+=ws[i]*wt; wsum+=wt; }
+  return (sum/wsum)*(ws.length/(ws.length+2));
 }
 function pct(score){ return Math.max(1, Math.min(99, Math.round(100/(1+Math.exp(-score*2.2))))); }
 // 保存記事のレア度判定（保存時のpctが基準。pct未記録の旧データは"N"扱い）
@@ -588,13 +595,17 @@ function relIn(sortedRef, sc){
 }
 function calibrate(list){
   if(!list.length) return;
-  // 参照分布 = 判定履歴(直近400件) + 現在のプール。履歴だけだと取り尽くしで
-  // 基準が高止まりし、プールだけだと最初のデッキに当たりが集中するため混合する
+  // 絶対値(本当の好みの強さ)70% + 参照分布内の順位30%。
+  // 参照分布=判定履歴(直近400)+現在プールの混合。88以上は上端を
+  // ストレッチしてプレミア帯(95+)へ到達可能にする
   const warm=S.seenScores&&S.seenScores.length>=30;
   const ref=(warm?[...S.seenScores]:[]).concat(list.map(a=>a.score));
   ref.sort((x,y)=>x-y);
   for(const a of list){
-    let p=Math.round(pctFromRel(relIn(ref,a.score)));
+    const abs=100/(1+Math.exp(-a.score*3.0));
+    let p=0.7*abs+0.3*pctFromRel(relIn(ref,a.score));
+    if(p>=88) p=88+(p-88)*1.6;
+    p=Math.round(p);
     if(!warm) p=Math.min(84,p); // 履歴が溜まるまで当たり演出は出さない
     a.pct=Math.max(1, Math.min(99, p));
   }
@@ -618,24 +629,28 @@ function rescore(){
   calibrate(articles);
 }
 function train(title, like){
+  // 適応学習率: モデルの予想が外れた判定ほど大きく学習する（0.5〜2.5）
+  const prob=1/(1+Math.exp(-scoreOf(title)*2.2));
+  const lr=0.5+2*(like?(1-prob):prob);
   const m=S.model;
-  for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+1; }
-  like?m.likeN++:m.disN++;
+  for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+lr; }
+  if(like) m.likeN+=lr; else m.disN+=lr;
+  return lr;
 }
 // trainの厳密な逆操作（Undo用）
-function untrain(title, like){
+function untrain(title, like, lr=1){
   const m=S.model;
   for(const f of feats(title)){
     const tbl=like?m.like:m.dis;
-    if(tbl[f]){ tbl[f]--; if(!tbl[f]) delete tbl[f]; }
+    if(tbl[f]!=null){ tbl[f]-=lr; if(tbl[f]<1e-9) delete tbl[f]; }
   }
-  if(like) m.likeN=Math.max(0,m.likeN-1); else m.disN=Math.max(0,m.disN-1);
+  if(like) m.likeN=Math.max(0,m.likeN-lr); else m.disN=Math.max(0,m.disN-lr);
 }
 
 // ── level ──
 function lvThreshold(l){ return 10*l*(l+1)/2; } // L2:10 L3:30 L4:60 L5:100...
 function renderLevel(){
-  const total=S.model.likeN+S.model.disN;
+  const total=judgeCount();
   let lv=1;
   while(lv<LV_TITLES.length && total>=lvThreshold(lv)) lv++;
   const lo=lvThreshold(lv-1), hi=lvThreshold(lv);
@@ -797,7 +812,7 @@ function renderStage(){
       </div>`:"";
       st.innerHTML=`<div class="done">
         <div class="big">デッキ完了</div>
-        <div class="stats"><b class="y">◎ ${deckStats.yes}</b> ／ <b class="n">× ${deckStats.no}</b><br>学習データ計 ${S.model.likeN+S.model.disN} 件</div>
+        <div class="stats"><b class="y">◎ ${deckStats.yes}</b> ／ <b class="n">× ${deckStats.no}</b><br>学習データ計 ${judgeCount()} 件</div>
         ${recAddHTML}
         ${lastRate?'<button class="undo-mini" id="undoBtn">↩ 直前の判定を戻す</button><br>':""}
         ${remaining>0?'<button id="nextDeck">次の'+Math.min(DECK_SIZE,remaining)+'枚を引く</button>':'<div class="empty" style="padding:6px 0">在庫切れ。「記事を取得」で補充しろ。</div><button id="recArt">おすすめ記事を探す</button>'}
@@ -986,7 +1001,7 @@ function playMatchFx(card, p){
 function commitRate(like){
   const a=deck[0]; if(!a) return;
   const snap={a, like, popped:null, recAdded:false};
-  train(a.title, like);
+  snap.lr=train(a.title, like);
   S.rated[a.hash]=1;
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
@@ -999,6 +1014,7 @@ function commitRate(like){
   S.seenScores=S.seenScores||[];
   S.seenScores.push(a.score||0);
   if(S.seenScores.length>400) S.seenScores.shift();
+  S.stats.judges=(S.stats.judges||0)+1;
   deck.shift();
   lastRate=snap;
 
@@ -1008,7 +1024,7 @@ function commitRate(like){
   if(like) unlock("first_like");
   if(S.stats.streak>=10) unlock("streak10");
   else if(S.stats.streak<=-10) unlock("streak10n");
-  const judgeTotal=S.model.likeN+S.model.disN;
+  const judgeTotal=judgeCount();
   if(judgeTotal>=100) unlock("judge100");
   if(judgeTotal>=1000) unlock("judge1000");
   if(GENRES.every(g=>{const st=(S.genreStats||{})[g]; return st&&(st.y+st.n)>0;})) unlock("all_genres");
@@ -1021,7 +1037,7 @@ function commitRate(like){
 function undoRate(){
   if(!lastRate) return;
   const {a, like, popped, recAdded}=lastRate;
-  untrain(a.title, like);
+  untrain(a.title, like, lastRate.lr||1);
   delete S.rated[a.hash];
   if(like){
     const i=S.saved.findIndex(s=>s.link===a.link);
@@ -1033,6 +1049,7 @@ function undoRate(){
   if(gs){ if(like) gs.y=Math.max(0,gs.y-1); else gs.n=Math.max(0,gs.n-1); }
   if(like) deckStats.yes=Math.max(0,deckStats.yes-1); else deckStats.no=Math.max(0,deckStats.no-1);
   if(S.seenScores&&S.seenScores.length) S.seenScores.pop();
+  if(S.stats&&S.stats.judges) S.stats.judges--;
   deck.unshift(a);
   lastRate=null;
   save(); renderStage();
@@ -1314,7 +1331,7 @@ function rankResults(list, genre, gw=1.2){
   return list;
 }
 function decorate(list, genre){
-  const trained=(S.model.likeN+S.model.disN)>0;
+  const trained=judgeCount()>0;
   for(const r of list){
     r.meta=[r.website||r.url,
             r.subs?"読者"+r.subs.toLocaleString():"",
@@ -1500,6 +1517,7 @@ document.getElementById("resetBtn").onclick=()=>{
   S.rated={};
   S.genreStats={};
   S.seenScores=[];
+  if(S.stats){ S.stats.judges=0; S.stats.streak=0; }
   if(typeof fxShown!=="undefined") fxShown.clear();
   rescore();
   buildDeck();
