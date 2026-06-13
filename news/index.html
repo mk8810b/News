@@ -1384,8 +1384,8 @@ async function youtubeSearch(q){
     }));
   });
 }
-function rankResults(list, genre, gw=1.2){
-  const kws=(GENRE_KW[genre]||[genre]).map(k=>k.toLowerCase());
+function rankResults(list, genre, gw=1.2, extraKw=[]){
+  const kws=[...new Set([...(GENRE_KW[genre]||[genre]), ...extraKw])].map(k=>k.toLowerCase());
   for(const r of list){
     const text=(r.title+" "+r.desc+" "+r.topics).toLowerCase();
     r.genreHit=kws.some(k=>text.includes(k));
@@ -1450,9 +1450,9 @@ function renderResults(results, note){
 function topKeywords(n, genre){
   const stop=new Set(["発売","公開","発表","開始","登場","話題","紹介","可能","必要","以上","対応","予定","限定","実施","決定","配信","掲載","本日","今日","記事","最新","注目"]);
   const cnt={};
-  // ジャンル指定時はそのジャンルの◎記事から語彙を取る（少なすぎる場合は全体へフォールバック）
+  // ジャンル指定時はそのジャンルの◎記事から語彙を取る（該当が無い場合のみ全体へフォールバック）
   let src=S.saved;
-  if(genre){ const f=S.saved.filter(a=>a.genre===genre); if(f.length>=3) src=f; }
+  if(genre){ const f=S.saved.filter(a=>a.genre===genre); if(f.length>=1) src=f; }
   for(const a of src){
     const t=a.title;
     const words=[
@@ -1483,8 +1483,16 @@ async function recommendArticles(){
   // 選択中のカテゴリを探索の前提にする（未選択時は最も好みのジャンル）
   const selected=GENRES.includes(activeGenre)?activeGenre:null;
   const ctxGenre=selected||topGenre();
-  const kws=sampleKeywords(3, 8, selected);
-  for(const g of (GENRE_KW[ctxGenre]||[ctxGenre]).slice(0,2)) if(!kws.includes(g)) kws.push(g);
+  const genreWords=GENRE_KW[ctxGenre]||[ctxGenre];
+  const sampled=sampleKeywords(3, 8, selected);
+  let kws;
+  if(selected){
+    // カテゴリ選択中はジャンル代表語を先頭に置き、YouTube検索（先頭2語）も含めカテゴリへ強く寄せる
+    kws=[...genreWords, ...sampled].filter((w,i,a)=>a.indexOf(w)===i).slice(0,5);
+  }else{
+    kws=[...sampled];
+    for(const g of genreWords.slice(0,2)) if(!kws.includes(g)) kws.push(g);
+  }
   const lists=await Promise.all([...kws.map(k=>feedlySearch(k)), ...kws.slice(0,2).map(k=>youtubeSearch(k))]);
   const inFeeds=new Set(S.feeds.map(f=>f.url)); const all=[];
   for(const r of lists){ if(r) for(const x of r){ if(!inFeeds.has(x.url)&&!all.some(c=>c.url===x.url)) all.push(x); } }
@@ -1496,7 +1504,7 @@ async function recommendArticles(){
     cands=all.filter(c=>!S.recSeen[c.url]);
   }
   if(!cands.length){ setStatus("おすすめフィードが見つからない。◎を増やすと検索語彙が広がる。"); save(); renderStage(); return; }
-  rankResults(cands, ctxGenre, selected?2.5:1.2);
+  rankResults(cands, ctxGenre, selected?2.5:1.2, selected?kws:[]);
   const picks=cands.slice(0,4).map(c=>({ name:c.title.slice(0,30), url:c.url, genre:selected||inferGenre(c.title+" "+c.desc+" "+c.topics) }));
   picks.forEach(p=>S.recSeen[p.url]=now);
   setStatus("おすすめ記事を取得中…");
