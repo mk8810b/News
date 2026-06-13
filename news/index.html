@@ -1019,6 +1019,10 @@ function commitRate(like){
   const snap={a, like, popped:null, recAdded:false};
   snap.lr=train(a.title, like);
   S.rated[a.hash]=1;
+  // 判定済み記事はarticlesから除く。残すとsilentRefresh毎のrescoreが肥大化し、
+  // saveArticlesのキャッシュ枠を判定済み記事が占有して起動時キャッシュが効かなくなる
+  const ai=articles.findIndex(x=>x.hash===a.hash);
+  if(ai>=0) articles.splice(ai,1);
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
   }
@@ -1055,6 +1059,7 @@ function undoRate(){
   const {a, like, popped, recAdded}=lastRate;
   untrain(a.title, like, lastRate.lr||1);
   delete S.rated[a.hash];
+  articles.push(a);
   if(like){
     const i=S.saved.findIndex(s=>s.link===a.link);
     if(i>=0) S.saved.splice(i,1);
