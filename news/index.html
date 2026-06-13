@@ -905,6 +905,13 @@ function attachSwipe(card){
       card.querySelectorAll(".ov").forEach(o=>o.style.opacity=0);
     }
   });
+  // システムジェスチャー等での中断時、ドラッグ位置に固まらないよう中央へ戻す
+  card.addEventListener("touchcancel",()=>{
+    if(!active) return; active=false;
+    card.style.transition="transform .22s ease";
+    card.style.transform="";
+    card.querySelectorAll(".ov").forEach(o=>o.style.opacity=0);
+  });
   // ── PC対応: マウスドラッグ ──
   let pActive=false, pDragged=false, px=0, py=0, pdx=0, pdy=0;
   card.addEventListener("pointerdown",e=>{
