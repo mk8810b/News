@@ -1497,7 +1497,7 @@ async function recommendArticles(){
   }
   if(!cands.length){ setStatus("おすすめフィードが見つからない。◎を増やすと検索語彙が広がる。"); save(); renderStage(); return; }
   rankResults(cands, ctxGenre, selected?2.5:1.2);
-  const picks=cands.slice(0,4).map(c=>({ name:c.title.slice(0,30), url:c.url, genre:inferGenre(c.title+" "+c.desc+" "+c.topics) }));
+  const picks=cands.slice(0,4).map(c=>({ name:c.title.slice(0,30), url:c.url, genre:selected||inferGenre(c.title+" "+c.desc+" "+c.topics) }));
   picks.forEach(p=>S.recSeen[p.url]=now);
   setStatus("おすすめ記事を取得中…");
   const results=await Promise.all(picks.map(async p=>{
@@ -1513,7 +1513,8 @@ async function recommendArticles(){
   articles.push(...fresh);
   rescore();
   lastRate=null;
-  activeGenre="すべて"; renderChips();
+  if(!selected) activeGenre="すべて";
+  renderChips();
   buildDeck(); renderStage();
   setStatus("カテゴリ「"+ctxGenre+"」を参照し「"+kws.join("」「")+"」で探索: "+fresh.length+"件追加（提供元"+picks.length+"フィード）");
   save(); saveArticles();
