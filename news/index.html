@@ -417,12 +417,17 @@ const DEFAULT_FEEDS = [
   { genre:"投資/経済", name:"東洋経済", url:"https://toyokeizai.net/list/feed/rss" },
   { genre:"投資/経済", name:"NHK経済", url:"https://www3.nhk.or.jp/rss/news/cat5.xml" },
   { genre:"ポーカー", name:"PokerNews(EN)", url:"https://www.pokernews.com/rss.php" },
+  { genre:"ポーカー", name:"世界のヨコサワ(YouTube)", url:"https://www.youtube.com/feeds/videos.xml?channel_id=UCwKNfdT49VN0fDNZFw7XEOQ" },
   { genre:"アニメ", name:"コミックナタリー", url:"https://natalie.mu/comic/feed/news" },
   { genre:"アニメ", name:"アニメ!アニメ!", url:"https://animeanime.jp/rss20/index.rdf" },
   { genre:"エンタメ", name:"音楽ナタリー", url:"https://natalie.mu/music/feed/news" },
   { genre:"心理学", name:"カラパイア", url:"https://karapaia.com/index.rdf" },
   { genre:"ペット", name:"sippo", url:"https://sippo.asahi.com/rss/index.rdf" },
   { genre:"釣り", name:"TSURINEWS", url:"https://tsurinews.jp/feed/" },
+];
+// 既存ユーザーにも一度だけ追加するフィード（後から増やせる）
+const SEED_FEEDS = [
+  { genre:"ポーカー", name:"世界のヨコサワ(YouTube)", url:"https://www.youtube.com/feeds/videos.xml?channel_id=UCwKNfdT49VN0fDNZFw7XEOQ" },
 ];
 
 // ── state ──
@@ -495,6 +500,17 @@ function applyGenres(){
 function judgeCount(){ return (S.stats&&S.stats.judges!=null)?S.stats.judges:Math.round((S.model.likeN||0)+(S.model.disN||0)); }
 function load(){
   try{ const r=localStorage.getItem(KEY); if(r) S=Object.assign(S,JSON.parse(r)); }catch(e){ showBadge("⚠ 読み込みに失敗",false); }
+  // 新規フィードの一度きりシード追加（フラグで管理し、ユーザーが削除しても再追加しない）
+  S.seeded=S.seeded||[];
+  let seededNew=false;
+  SEED_FEEDS.forEach((f,i)=>{
+    if(!S.seeded.includes(f.url)){
+      S.seeded.push(f.url);
+      if(!S.feeds.some(x=>x.url===f.url)) S.feeds.push({ id:"s"+Date.now()+i, ...f });
+      seededNew=true;
+    }
+  });
+  if(seededNew) save();
   // 旧データ移行: 判定数の整数カウンタ（学習率導入でlikeN/disNが小数になるため別管理）
   S.stats=S.stats||{streak:0,big:0,prem:0};
   if(S.stats.judges==null) S.stats.judges=Math.round((S.model.likeN||0)+(S.model.disN||0));
