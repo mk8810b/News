@@ -807,7 +807,7 @@ function cardHTML(a, back){
     <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
     ${a.desc?`<div class="desc">${esc(a.desc)}</div>`:""}
-    <div class="sub"><span class="genre">${a.rec?"★":""}${a.genre}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+    <div class="sub"><span class="genre">${a.rec?"★":""}${esc(a.genre)}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
   </div>`;
 }
 function renderStage(){
@@ -1095,7 +1095,7 @@ function renderSaved(st){
       <div class="top">
         <div style="flex:1">
           <a href="${esc(a.link)}" target="_blank" rel="noopener"><span class="rbadge ${r.toLowerCase()}">${r}</span>${esc(a.title)}</a>
-          <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+          <div class="sub"><span class="genre">${esc(a.genre)}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
         </div>
         <button class="del" data-i="${i}">×</button>
       </div>
@@ -1121,15 +1121,15 @@ function renderSaved(st){
 
 // ── chips / feeds ──
 function fillGenreSelects(){
-  document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
-  document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${g}</option>`).join("");
+  document.getElementById("addGenre").innerHTML=GENRES.map(g=>`<option>${esc(g)}</option>`).join("");
+  document.getElementById("searchGenre").innerHTML=GENRES.map(g=>`<option>${esc(g)}</option>`).join("");
 }
 function renderChips(){
   const c=document.getElementById("chips");
   const cnt=g=>articles.filter(a=>!S.rated[a.hash]&&(g==="すべて"||a.genre===g)).length;
   c.innerHTML=["すべて",...GENRES].map(g=>{
     const n=cnt(g);
-    return `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}${n?` <span class="cnt">${n}</span>`:""}</button>`;
+    return `<button class="chip ${g===activeGenre?"on":""}" data-g="${esc(g)}">${esc(g)}${n?` <span class="cnt">${n}</span>`:""}</button>`;
   }).join("");
   c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     activeGenre=b.dataset.g; renderChips();
@@ -1217,7 +1217,7 @@ function renderFeeds(){
   el.innerHTML=S.feeds.map(f=>`
     <div class="feed-row">
       <span class="dot ${feedStatus[f.id]||""}"></span>
-      <span class="g">${f.genre}</span>
+      <span class="g">${esc(f.genre)}</span>
       <span class="n">${esc(f.name)}</span>
       <button class="del" data-id="${f.id}">×</button>
     </div>`).join("");
