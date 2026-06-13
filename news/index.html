@@ -1334,7 +1334,56 @@ async function feedlySearch(q){
     })).filter(r=>/^https?:/.test(r.url));
   });
 }
-// ジャンル適合・学習済みの好み・読者数・言語で複合スコアを付けて並べ替える
+// YouTube検索結果ページのytInitialDataからチャンネルを抽出し、各チャンネルの
+// RSSフィードURLを返す（best-effort。プロキシ越しに失敗したらnull）
+function ytExtractBalanced(s, start){
+  let depth=0, inStr=false, esc=false;
+  for(let i=start;i<s.length;i++){
+    const c=s[i];
+    if(inStr){ if(esc) esc=false; else if(c==="\\") esc=true; else if(c==='"') inStr=false; }
+    else { if(c==='"') inStr=true; else if(c==='{') depth++; else if(c==='}'){ if(--depth===0) return s.slice(start,i+1); } }
+  }
+  return null;
+}
+function ytSubsToNum(t){
+  if(!t) return 0;
+  const m=(""+t).replace(/,/g,"").match(/([\d.]+)\s*(億|万|k|m|b)?/i);
+  if(!m) return 0;
+  const mult={"億":1e8,"万":1e4,"k":1e3,"m":1e6,"b":1e9}[(m[2]||"").toLowerCase()]||1;
+  return Math.round((parseFloat(m[1])||0)*mult);
+}
+function ytCollectChannels(obj, out, seen){
+  if(!obj||typeof obj!=="object") return;
+  if(Array.isArray(obj)){ for(const x of obj) ytCollectChannels(x,out,seen); return; }
+  const cr=obj.channelRenderer||obj.gridChannelRenderer;
+  if(cr&&cr.channelId&&!seen.has(cr.channelId)){
+    seen.add(cr.channelId);
+    const title=(cr.title&&cr.title.simpleText)||(cr.title&&cr.title.runs&&cr.title.runs[0]&&cr.title.runs[0].text)||"";
+    const desc=((cr.descriptionSnippet&&cr.descriptionSnippet.runs)||[]).map(r=>r.text).join("");
+    const subsText=(cr.videoCountText&&cr.videoCountText.simpleText)||(cr.subscriberCountText&&cr.subscriberCountText.simpleText)||"";
+    if(title) out.push({channelId:cr.channelId,title,desc,subsText});
+  }
+  for(const k in obj) ytCollectChannels(obj[k], out, seen);
+}
+async function youtubeSearch(q){
+  const yurl="https://www.youtube.com/results?search_query="+encodeURIComponent(q)+"&sp=EgIQAg==&hl=ja&gl=JP";
+  return raceFirst(PROXIES.map(p=>p(yurl)), 8000, async res=>{
+    const html=await res.text();
+    const idx=html.indexOf("ytInitialData");
+    if(idx<0) return null;
+    const brace=html.indexOf("{", idx);
+    if(brace<0) return null;
+    let data; try{ data=JSON.parse(ytExtractBalanced(html, brace)); }catch(e){ return null; }
+    const out=[]; ytCollectChannels(data, out, new Set());
+    if(!out.length) return null;
+    return out.slice(0,20).map(c=>({
+      title:c.title,
+      url:"https://www.youtube.com/feeds/videos.xml?channel_id="+c.channelId,
+      website:"https://www.youtube.com/channel/"+c.channelId,
+      desc:c.desc||"", subs:ytSubsToNum(c.subsText), lang:"", topics:"", yt:true,
+    }));
+  });
+}
 function rankResults(list, genre, gw=1.2){
   const kws=(GENRE_KW[genre]||[genre]).map(k=>k.toLowerCase());
   for(const r of list){
@@ -1349,8 +1398,9 @@ function rankResults(list, genre, gw=1.2){
 function decorate(list, genre){
   const trained=judgeCount()>0;
   for(const r of list){
-    r.meta=[r.website||r.url,
-            r.subs?"読者"+r.subs.toLocaleString():"",
+    const isYt=r.yt||/youtube\.com\/feeds/.test(r.url);
+    r.meta=[isYt?"▶YouTube":(r.website||r.url),
+            r.subs?(isYt?"登録":"読者")+r.subs.toLocaleString():"",
             r.genreHit?"♦"+genre:"",
             trained?"好み"+pct(r.pref)+"%":""].filter(Boolean).join(" ・ ");
   }
@@ -1435,7 +1485,7 @@ async function recommendArticles(){
   const ctxGenre=selected||topGenre();
   const kws=sampleKeywords(3, 8, selected);
   for(const g of (GENRE_KW[ctxGenre]||[ctxGenre]).slice(0,2)) if(!kws.includes(g)) kws.push(g);
-  const lists=await Promise.all(kws.map(k=>feedlySearch(k)));
+  const lists=await Promise.all([...kws.map(k=>feedlySearch(k)), ...kws.slice(0,2).map(k=>youtubeSearch(k))]);
   const inFeeds=new Set(S.feeds.map(f=>f.url)); const all=[];
   for(const r of lists){ if(r) for(const x of r){ if(!inFeeds.has(x.url)&&!all.some(c=>c.url===x.url)) all.push(x); } }
   let cands=all.filter(c=>!S.recSeen[c.url]);
@@ -1475,12 +1525,12 @@ document.getElementById("recBtn").onclick=async()=>{
   const genre=document.getElementById("searchGenre").value;
   const kws=topKeywords(3);
   const all=[]; const seen=new Set(S.feeds.map(f=>f.url));
-  const lists=await Promise.all(kws.map(k=>feedlySearch(k)));
+  const lists=await Promise.all([...kws.map(k=>feedlySearch(k)), ...kws.slice(0,2).map(k=>youtubeSearch(k))]);
   for(const r of lists){
     if(r) for(const x of r){ if(!seen.has(x.url)&&!all.some(a=>a.url===x.url)) all.push(x); }
   }
   rankResults(all, genre);
-  renderResults(decorate(all.slice(0,12), genre), "◎傾向の頻出語「"+kws.join("」「")+"」で検索し、好み適合度・読者数順に並べ替えた:");
+  renderResults(decorate(all.slice(0,12), genre), "◎傾向の頻出語「"+kws.join("」「")+"」でWeb+YouTubeを検索し、好み適合度・登録者数順に並べ替えた:");
   btn.disabled=false; btn.textContent="学習傾向からおすすめフィードを探す";
 };
 document.getElementById("searchBtn").onclick=async()=>{
@@ -1494,13 +1544,13 @@ document.getElementById("searchBtn").onclick=async()=>{
   }else{
     const genre=document.getElementById("searchGenre").value;
     const gkw=(GENRE_KW[genre]||[genre])[0];
-    const [r1,r2]=await Promise.all([feedlySearch(q), feedlySearch(q+" "+gkw)]);
-    if(!r1&&!r2){ renderResults(null); }
+    const [r1,r2,ry]=await Promise.all([feedlySearch(q), feedlySearch(q+" "+gkw), youtubeSearch(q)]);
+    if(!r1&&!r2&&!ry){ renderResults(null); }
     else{
       const all=[];
-      for(const r of [...(r2||[]),...(r1||[])]) if(!all.some(a=>a.url===r.url)) all.push(r);
+      for(const r of [...(ry||[]),...(r2||[]),...(r1||[])]) if(!all.some(a=>a.url===r.url)) all.push(r);
       rankResults(all, genre);
-      renderResults(decorate(all.slice(0,12), genre), "ジャンル「"+genre+"」を考慮し、好み適合度・読者数順に並べ替えた:");
+      renderResults(decorate(all.slice(0,12), genre), "ジャンル「"+genre+"」を考慮し、Web+YouTubeを好み適合度・登録者数順に並べ替えた:");
     }
   }
   btn.disabled=false; btn.textContent="フィードを検索";
