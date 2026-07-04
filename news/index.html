@@ -26,10 +26,17 @@
   h1 span { color:var(--accent); }
   .hicons { display:flex; gap:8px; }
   .hicons button {
+    position:relative;
     width:38px; height:38px; border-radius:12px; font-size:17px;
     border:1px solid var(--edge); background:var(--card); color:var(--dim); cursor:pointer;
   }
   .hicons button.on { background:var(--accent); color:#1A1408; border-color:var(--accent); }
+  .hicon-badge {
+    position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 4px;
+    border-radius:99px; background:var(--neg); color:#fff; font-size:9px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; line-height:1;
+  }
+  .hicon-badge:empty { display:none; }
   /* level */
   .lv { margin-top:8px; }
   .lv .row1 { display:flex; justify-content:space-between; align-items:baseline; font-size:12px; }
@@ -163,6 +170,7 @@
   .art .sub { font-size:11px; color:var(--dim); margin-top:5px; }
   .art .sub .genre { color:var(--accent); }
   .art .del { background:none; border:none; color:var(--dim); font-size:16px; cursor:pointer; padding:2px 6px; }
+  .art.read { opacity:0.6; }
   /* feed manager */
   .mgr { margin-top:26px; padding-top:14px; }
   .radar-sec { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:14px; margin-bottom:18px; }
@@ -308,7 +316,7 @@
 <header>
   <h1>Feed<span>.</span></h1>
   <div class="hicons">
-    <button id="navSaved" title="保存済み">★</button>
+    <button id="navSaved" title="保存済み">★<span class="hicon-badge" id="navSavedBadge"></span></button>
     <button id="navMgr" title="管理">⚙</button>
   </div>
 </header>
@@ -953,6 +961,8 @@ function renderStage(){
   attachSwipe(top);
   st.querySelector(".deck-acts .yes").onclick=()=>flyOut(top,true);
   st.querySelector(".deck-acts .no").onclick=()=>flyOut(top,false);
+  const linkEl=top.querySelector("a");
+  if(linkEl){ const artRef=deck[0]; linkEl.addEventListener("click",()=>{ artRef.opened=true; }); }
   const ub=document.getElementById("undoBtn");
   if(ub) ub.onclick=undoRate;
   const p = deck[0].pct ?? pct(deck[0].score);
@@ -1108,7 +1118,7 @@ function commitRate(like){
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
   }
-  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,pct:a.pct??pct(a.score)}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,pct:a.pct??pct(a.score),opened:!!a.opened}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
   S.genreStats=S.genreStats||{};
   const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
@@ -1163,20 +1173,27 @@ function renderSaved(st){
   const rarities=["SSR","SR","R","N"];
   const counts={SSR:0,SR:0,R:0,N:0};
   S.saved.forEach(a=>counts[rarityOf(a.pct)]++);
+  const unreadCount=unreadSavedCount();
 
-  const headBtns=['<button class="rt all '+(savedFilter==="all"?"on":"")+'" data-r="all">すべて '+S.saved.length+'件</button>']
-    .concat(rarities.map(r=>`<button class="rt ${r.toLowerCase()} ${savedFilter===r?"on":""} ${counts[r]?"":"zero"}" data-r="${r}">${r} ${counts[r]}</button>`));
+  const headBtns=[
+    '<button class="rt all '+(savedFilter==="all"?"on":"")+'" data-r="all">すべて '+S.saved.length+'件</button>',
+    '<button class="rt unread '+(savedFilter==="unread"?"on":"")+' '+(unreadCount?"":"zero")+'" data-r="unread">未読 '+unreadCount+'</button>',
+  ].concat(rarities.map(r=>`<button class="rt ${r.toLowerCase()} ${savedFilter===r?"on":""} ${counts[r]?"":"zero"}" data-r="${r}">${r} ${counts[r]}</button>`));
 
-  const indexed=S.saved.map((a,i)=>({a,i})).filter(({a})=>savedFilter==="all"||rarityOf(a.pct)===savedFilter);
+  const indexed=S.saved.map((a,i)=>({a,i})).filter(({a})=>{
+    if(savedFilter==="all") return true;
+    if(savedFilter==="unread") return !a.opened;
+    return rarityOf(a.pct)===savedFilter;
+  });
 
   const list=indexed.length
     ? indexed.map(({a,i})=>{
       const r=rarityOf(a.pct);
       return `
-    <div class="art ${r.toLowerCase()}">
+    <div class="art ${r.toLowerCase()}${a.opened?" read":""}">
       <div class="top">
         <div style="flex:1">
-          <a href="${esc(a.link)}" target="_blank" rel="noopener"><span class="rbadge ${r.toLowerCase()}">${r}</span>${esc(a.title)}</a>
+          <a href="${esc(a.link)}" target="_blank" rel="noopener" data-i="${i}"><span class="rbadge ${r.toLowerCase()}">${r}</span>${esc(a.title)}</a>
           <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
         </div>
         <button class="del" data-i="${i}">×</button>
@@ -1193,6 +1210,17 @@ function renderSaved(st){
   });
   st.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
     S.saved.splice(Number(b.dataset.i),1); save(); renderStage();
+  });
+  st.querySelectorAll(".art a[data-i]").forEach(link=>{
+    link.addEventListener("click",()=>{
+      const i=Number(link.dataset.i);
+      if(S.saved[i] && !S.saved[i].opened){
+        S.saved[i].opened=true;
+        save();
+        // target=_blankのデフォルト遷移を妨げないよう、再描画は次のティックへ遅延する
+        setTimeout(()=>{ if(activeGenre==="★保存済み") renderStage(); },0);
+      }
+    });
   });
   document.getElementById("clearSaved").onclick=()=>{
     if(confirm("保存済みの記事"+S.saved.length+"件をすべて削除する。元に戻せない。実行するか？")){
@@ -1220,9 +1248,13 @@ function renderChips(){
   });
   syncHicons();
 }
+function unreadSavedCount(){ return S.saved.filter(s=>!s.opened).length; }
 function syncHicons(){
   document.getElementById("navSaved").classList.toggle("on", activeGenre==="★保存済み");
   document.getElementById("navMgr").classList.toggle("on", activeGenre==="⚙管理");
+  const n=unreadSavedCount();
+  const badge=document.getElementById("navSavedBadge");
+  if(badge) badge.textContent = n>0 ? (n>99?"99+":String(n)) : "";
 }
 document.getElementById("navSaved").onclick=()=>{
   activeGenre=activeGenre==="★保存済み"?"すべて":"★保存済み";
