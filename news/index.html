@@ -103,6 +103,8 @@
     -webkit-background-clip:text; background-clip:text; color:transparent;
     filter:drop-shadow(0 0 4px rgba(255,64,64,0.5));
   }
+  .dcard .sub .alt { color:#9BB8CF; }
+  .dcard .sub .exp { color:#7CC0E8; font-weight:700; }
   .ov {
     position:absolute; top:16px; font-size:22px; font-weight:800; padding:6px 14px;
     border-radius:10px; border:2.5px solid; opacity:0; transform:rotate(-8deg);
@@ -637,12 +639,59 @@ function freshBonus(ts){
 function sortArticles(){
   articles.sort((a,b)=>(b.score+freshBonus(b.ts))-(a.score+freshBonus(a.ts)));
 }
+// ── ストーリー重複排除 ──
+// 同じ出来事が複数フィードに載ると媒体の数だけ判定させられるため、
+// タイトルbigramのJaccard類似で束ね、最高ランクの記事を代表にする
+const sigCache={};
+function titleSig(a){
+  let s=sigCache[a.hash];
+  if(!s){
+    const t=a.title.toLowerCase().replace(/[【】\[\]（）()「」『』・、。，,.:：;；!！?？\s\-–—|｜]/g,"");
+    s=new Set();
+    for(let i=0;i<t.length-1;i++) s.add(t.slice(i,i+2));
+    sigCache[a.hash]=s;
+  }
+  return s;
+}
+function jaccard(x,y){
+  if(!x.size||!y.size) return 0;
+  const [sm,lg]=x.size<y.size?[x,y]:[y,x];
+  let inter=0;
+  for(const v of sm) if(lg.has(v)) inter++;
+  return inter/(x.size+y.size-inter);
+}
+const DUP_TH=0.5;
+function clusterArticles(){
+  const pool=articles.filter(a=>!S.rated[a.hash]);
+  for(const a of pool){ a.dupOf=null; a.alts=null; a.altGenres=null; }
+  // articlesはスコア降順ソート済みなので、先勝ちで最良記事が代表になる
+  for(let i=0;i<pool.length;i++){
+    const a=pool[i];
+    if(a.dupOf) continue;
+    const sa=titleSig(a);
+    for(let j=i+1;j<pool.length;j++){
+      const b=pool[j];
+      if(b.dupOf) continue;
+      const sb=titleSig(b);
+      // サイズ比がJaccardの上限なので、閾値未満のペアは計算せず飛ばす
+      if(Math.min(sa.size,sb.size)<Math.max(sa.size,sb.size)*DUP_TH) continue;
+      if(jaccard(sa,sb)>=DUP_TH){
+        b.dupOf=a.hash;
+        (a.alts=a.alts||[]).push({hash:b.hash,source:b.source,link:b.link});
+        if(b.genre!==a.genre&&!(a.altGenres||[]).includes(b.genre)) (a.altGenres=a.altGenres||[]).push(b.genre);
+      }
+    }
+  }
+}
+// ジャンル一致判定: 代表記事は束ねた重複記事のジャンルも背負う
+function inGenre(a,g){ return g==="すべて"||a.genre===g||(a.altGenres&&a.altGenres.includes(g)); }
 // 現在の学習モデルで全記事のスコアと表示%を再計算する。
 // 記事がデッキに出る前は必ずここを通すこと（古いスコアの混入防止）
 function rescore(){
   articles.forEach(a=>a.score=scoreOf(a.title));
   sortArticles();
   calibrate(articles);
+  clusterArticles();
 }
 function train(title, like){
   // 適応学習率: モデルの予想が外れた判定ほど大きく学習する（0.5〜2.5）
@@ -778,8 +827,28 @@ async function silentRefresh(){
 
 // ── deck ──
 function buildDeck(){
-  const pool=articles.filter(a=>!S.rated[a.hash]&&(activeGenre==="すべて"||a.genre===activeGenre));
+  const pool=articles.filter(a=>!S.rated[a.hash]&&!a.dupOf&&inGenre(a,activeGenre));
+  pool.forEach(a=>a.explore=false);
   deck=pool.slice(0,DECK_SIZE);
+  // 開拓枠: 学習が既知の好みへ寄るほど視野が狭まる（フィルターバブル）ため、
+  // 学習が進んだら(20判定以上)デッキ2枠を通常ランキング外から注入する。
+  // 判定実績の少ないジャンルを優先して選び、興味の地図を広げ続ける
+  if(judgeCount()>=20 && activeGenre==="すべて" && pool.length>DECK_SIZE+2){
+    const judged=g=>{ const st=(S.genreStats||{})[g]; return st?st.y+st.n:0; };
+    const rest=pool.slice(DECK_SIZE)
+      .map(a=>({a, v:1/(1+judged(a.genre))+Math.random()*0.3}))
+      .sort((x,y)=>y.v-x.v);
+    const picks=[], usedG=new Set();
+    for(const {a} of rest){
+      if(picks.length>=2) break;
+      if(usedG.has(a.genre)) continue;
+      usedG.add(a.genre); picks.push(a);
+    }
+    if(picks.length){
+      deck=deck.slice(0,DECK_SIZE-picks.length).concat(picks);
+      picks.forEach(a=>a.explore=true);
+    }
+  }
   // スコア順のままだと次のカードが読めてリーチ予告が成立しないため、デッキ内はランダム順
   for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
   deckStats={yes:0,no:0};
@@ -801,13 +870,16 @@ function starsHTML(p){
   return '<span class="stars max">★★★</span>';
 }
 function cardHTML(a, back){
+  // 学習ゼロの状態では全カードが50%になり「精度が低い」と誤解させるため、
+  // 数字を出さず学習中であることを正直に示す
+  const trained=(S.model.likeN+S.model.disN)>0;
   return `<div class="dcard ${back?"back":""}${back&&omenOf(a)?" reach":""}" data-h="${a.hash}">
     <div class="ov yes">◎ 興味あり</div>
     <div class="ov no">× 興味なし</div>
-    <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
+    <div class="score">${trained?`${a.pct??pct(a.score)}<small>MATCH</small>`:`—<small>学習中</small>`}</div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
     ${a.desc?`<div class="desc">${esc(a.desc)}</div>`:""}
-    <div class="sub"><span class="genre">${a.rec?"★":""}${a.genre}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
+    <div class="sub">${a.explore?'<span class="exp">🧭開拓</span> ':""}<span class="genre">${a.rec?"★":""}${a.genre}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}${a.alts&&a.alts.length?` ・ <span class="alt">他${a.alts.length}媒体でも報道</span>`:""}</div>
   </div>`;
 }
 function renderStage(){
@@ -816,7 +888,7 @@ function renderStage(){
   const st=document.getElementById("stage");
   if(activeGenre==="★保存済み"){ renderSaved(st); return; }
   if(!deck.length){
-    const remaining=articles.filter(a=>!S.rated[a.hash]&&(activeGenre==="すべて"||a.genre===activeGenre)).length;
+    const remaining=articles.filter(a=>!S.rated[a.hash]&&!a.dupOf&&inGenre(a,activeGenre)).length;
     if(deckStats.yes+deckStats.no>0){
       const pend=Object.values(recLiked).filter(f=>!S.feeds.some(x=>x.url===f.url));
       const recAddHTML=pend.length?`<div class="rec-add">
@@ -844,6 +916,13 @@ function renderStage(){
       });
       const rb=document.getElementById("recArt");
       if(rb) rb.onclick=()=>{ rb.disabled=true; rb.textContent="探索中…"; recommendArticles(); };
+      // 在庫切れで流れを止めない: デッキを使い切ったら自動でおすすめ探索を開始する
+      // （探索失敗時の再レンダリングでループしないよう2分間隔に制限）
+      if(rb && S.saved.length>=5 && Date.now()-autoRecTs>120000){
+        autoRecTs=Date.now();
+        rb.disabled=true; rb.textContent="自動探索中…";
+        recommendArticles();
+      }
       const ub=document.getElementById("undoBtn");
       if(ub) ub.onclick=undoRate;
     } else {
@@ -1019,6 +1098,8 @@ function commitRate(like){
   const snap={a, like, popped:null, recAdded:false};
   snap.lr=train(a.title, like);
   S.rated[a.hash]=1;
+  // 同一ストーリーとして束ねた記事も判定済みにする（学習は代表1回のみ）
+  if(a.alts){ for(const d of a.alts) S.rated[d.hash]=1; snap.alts=a.alts; }
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
   }
@@ -1052,9 +1133,10 @@ function commitRate(like){
 // 直前の判定を1段階だけ取り消す
 function undoRate(){
   if(!lastRate) return;
-  const {a, like, popped, recAdded}=lastRate;
+  const {a, like, popped, recAdded, alts}=lastRate;
   untrain(a.title, like, lastRate.lr||1);
   delete S.rated[a.hash];
+  if(alts) for(const d of alts) delete S.rated[d.hash];
   if(like){
     const i=S.saved.findIndex(s=>s.link===a.link);
     if(i>=0) S.saved.splice(i,1);
@@ -1121,7 +1203,7 @@ function fillGenreSelects(){
 }
 function renderChips(){
   const c=document.getElementById("chips");
-  const cnt=g=>articles.filter(a=>!S.rated[a.hash]&&(g==="すべて"||a.genre===g)).length;
+  const cnt=g=>articles.filter(a=>!S.rated[a.hash]&&!a.dupOf&&inGenre(a,g)).length;
   c.innerHTML=["すべて",...GENRES].map(g=>{
     const n=cnt(g);
     return `<button class="chip ${g===activeGenre?"on":""}" data-g="${g}">${g}${n?` <span class="cnt">${n}</span>`:""}</button>`;
@@ -1304,6 +1386,7 @@ function renderAch(){
 
 // ── feed search & recommend ──
 const recLiked={};
+let autoRecTs=0;
 function topGenre(){
   const gs=S.genreStats||{}; let best=null, bv=-1;
   for(const g of GENRES){
