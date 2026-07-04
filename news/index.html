@@ -457,22 +457,27 @@ function snd(name){
   if(S.sound===false) return;
   try{
     AC=AC||new (window.AudioContext||window.webkitAudioContext)();
-    if(AC.state==="suspended") AC.resume();
-    const t=AC.currentTime;
-    const tone=(f,start,dur,type="square",g=0.04)=>{
-      const o=AC.createOscillator(), v=AC.createGain();
-      o.type=type; o.frequency.value=f;
-      v.gain.setValueAtTime(g,t+start);
-      v.gain.exponentialRampToValueAtTime(0.0001,t+start+dur);
-      o.connect(v); v.connect(AC.destination);
-      o.start(t+start); o.stop(t+start+dur);
+    const play=()=>{
+      try{
+        const t=AC.currentTime;
+        const tone=(f,start,dur,type="square",g=0.04)=>{
+          const o=AC.createOscillator(), v=AC.createGain();
+          o.type=type; o.frequency.value=f;
+          v.gain.setValueAtTime(g,t+start);
+          v.gain.exponentialRampToValueAtTime(0.0001,t+start+dur);
+          o.connect(v); v.connect(AC.destination);
+          o.start(t+start); o.stop(t+start+dur);
+        };
+        if(name==="yes") tone(660,0,0.07,"triangle",0.03);
+        else if(name==="no") tone(220,0,0.08,"triangle",0.025);
+        else if(name==="reach") [392,494,587].forEach((f,i)=>tone(f,i*0.09,0.1,"square",0.03));
+        else if(name==="big") [523,659,784,1047].forEach((f,i)=>tone(f,i*0.1,0.18,"square",0.045));
+        else if(name==="premium"){ [523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,i*0.09,0.22,"sawtooth",0.04)); tone(2093,0.6,0.5,"sine",0.03); }
+        else if(name==="unlock") [880,1109,1319].forEach((f,i)=>tone(f,i*0.08,0.25,"sine",0.04));
+      }catch(e){}
     };
-    if(name==="yes") tone(660,0,0.07,"triangle",0.03);
-    else if(name==="no") tone(220,0,0.08,"triangle",0.025);
-    else if(name==="reach") [392,494,587].forEach((f,i)=>tone(f,i*0.09,0.1,"square",0.03));
-    else if(name==="big") [523,659,784,1047].forEach((f,i)=>tone(f,i*0.1,0.18,"square",0.045));
-    else if(name==="premium"){ [523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,i*0.09,0.22,"sawtooth",0.04)); tone(2093,0.6,0.5,"sine",0.03); }
-    else if(name==="unlock") [880,1109,1319].forEach((f,i)=>tone(f,i*0.08,0.25,"sine",0.04));
+    if(AC.state==="suspended") AC.resume().then(play).catch(()=>{});
+    else play();
   }catch(e){}
 }
 function buzz(p){ if(S.sound===false) return; try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
