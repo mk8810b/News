@@ -118,6 +118,11 @@
   }
   .ov.yes { left:16px; color:var(--pos); border-color:var(--pos); }
   .ov.no  { right:16px; color:var(--neg); border-color:var(--neg); transform:rotate(8deg); }
+  .ov.super {
+    left:50%; top:14px; transform:translateX(-50%); font-size:16px;
+    color:#1A1408; background:linear-gradient(135deg,#F0C870,var(--accent));
+    border-color:#F0C870;
+  }
   .deck-acts { display:flex; gap:12px; margin-top:14px; }
   .deck-acts button {
     flex:1; padding:15px 0; border-radius:13px; font-size:16px; font-weight:700;
@@ -125,6 +130,13 @@
   }
   .deck-acts .yes { color:var(--pos); border-color:rgba(91,179,133,0.5); }
   .deck-acts .no  { color:var(--dim); border-color:var(--edge); }
+  .super-btn {
+    display:block; width:100%; margin-top:10px; padding:12px 0; border-radius:13px;
+    font-size:14px; font-weight:700; border:1.5px solid #F0C870;
+    background:linear-gradient(135deg,rgba(240,200,112,0.15),rgba(224,164,53,0.15));
+    color:var(--accent); cursor:pointer;
+  }
+  .super-btn:disabled { opacity:0.4; border-color:var(--edge); color:var(--dim); background:none; cursor:default; }
   .hint { text-align:center; font-size:11px; color:var(--dim); margin-top:10px; }
   /* completion */
   .done {
@@ -160,11 +172,15 @@
   .rbadge.sr { background:var(--accent); color:#1A1408; }
   .rbadge.r { background:#9BA8B5; color:#1A1408; }
   .rbadge.n { background:var(--edge); color:var(--dim); }
+  .rbadge.super { background:linear-gradient(135deg,#F0C870,var(--accent)); color:#1A1408; }
   .art { background:var(--card); border:1px solid var(--edge); border-radius:13px; padding:13px 14px; margin-top:9px; }
   .art.ssr { border-color:transparent; background:
     linear-gradient(var(--card),var(--card)) padding-box,
     linear-gradient(135deg,#ff5e5e,#ffd25e,#5effa0,#5ec8ff,#b15eff) border-box; }
   .art.sr { border-color:rgba(224,164,53,0.6); }
+  .art.super { border-color:transparent; background:
+    linear-gradient(var(--card),var(--card)) padding-box,
+    linear-gradient(135deg,#F0C870,var(--accent)) border-box; }
   .art .top { display:flex; gap:10px; align-items:flex-start; }
   .art a { color:var(--paper); text-decoration:none; font-size:15px; line-height:1.45; font-weight:500; display:block; }
   .art .sub { font-size:11px; color:var(--dim); margin-top:5px; }
@@ -404,6 +420,7 @@ const ACH_DEFS=[
   {id:"night", name:"草木も眠る鑑定士", desc:"深夜2〜4時に判定した"},
   {id:"feeds20", name:"フィード収集家", desc:"フィードを20本登録した"},
   {id:"purge", name:"断捨離", desc:"保存記事を一括削除した"},
+  {id:"first_super", name:"直感を信じろ", desc:"初めてスーパー気になるを使った"},
 ];
 const GENRE_KW = {
   "テック/AI":["テクノロジー","ai","tech","it"],
@@ -418,6 +435,8 @@ const GENRE_KW = {
   "アダルト":["アダルト"],
 };
 const DECK_SIZE = 10;
+const SUPER_LIKE_LIMIT = 5;
+const SUPER_LIKE_BOOST = 3;
 const LV_TITLES = ["見習い","観察者","分類屋","選別士","目利き","分析官","鑑定士","審美眼","賢者","フィード神"];
 
 const DEFAULT_FEEDS = [
@@ -482,6 +501,7 @@ function snd(name){
         else if(name==="big") [523,659,784,1047].forEach((f,i)=>tone(f,i*0.1,0.18,"square",0.045));
         else if(name==="premium"){ [523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,i*0.09,0.22,"sawtooth",0.04)); tone(2093,0.6,0.5,"sine",0.03); }
         else if(name==="unlock") [880,1109,1319].forEach((f,i)=>tone(f,i*0.08,0.25,"sine",0.04));
+        else if(name==="super") [440,660,880,1108].forEach((f,i)=>tone(f,i*0.07,0.16,"triangle",0.045));
       }catch(e){}
     };
     if(AC.state==="suspended") AC.resume().then(play).catch(()=>{});
@@ -706,10 +726,11 @@ function rescore(){
   calibrate(articles);
   clusterArticles();
 }
-function train(title, like){
-  // 適応学習率: モデルの予想が外れた判定ほど大きく学習する（0.5〜2.5）
+function train(title, like, boost=1){
+  // 適応学習率: モデルの予想が外れた判定ほど大きく学習する（0.5〜2.5）。
+  // boostはスーパー気になる用の追加倍率（通常は1）
   const prob=1/(1+Math.exp(-scoreOf(title)*2.2));
-  const lr=0.5+2*(like?(1-prob):prob);
+  const lr=(0.5+2*(like?(1-prob):prob))*boost;
   const m=S.model;
   for(const f of feats(title)){ const tbl=like?m.like:m.dis; tbl[f]=(tbl[f]||0)+lr; }
   if(like) m.likeN+=lr; else m.disN+=lr;
@@ -889,6 +910,7 @@ function cardHTML(a, back){
   return `<div class="dcard ${back?"back":""}${back&&omenOf(a)?" reach":""}" data-h="${a.hash}">
     <div class="ov yes">◎ 興味あり</div>
     <div class="ov no">× 興味なし</div>
+    <div class="ov super">⚡ スーパー気になる</div>
     <div class="score">${trained?`${a.pct??pct(a.score)}<small>MATCH</small>`:`—<small>学習中</small>`}</div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
     ${a.desc?`<div class="desc">${esc(a.desc)}</div>`:""}
@@ -946,6 +968,7 @@ function renderStage(){
     }
     return;
   }
+  const superRemain=superLikeRemaining();
   st.innerHTML=`
     <div class="deck-head"><span>残り <b>${deck.length}</b> / ${DECK_SIZE}</span>${lastRate?'<button id="undoBtn">↩ 戻す</button>':""}<span>◎ ${deckStats.yes} ／ × ${deckStats.no}</span></div>
     <div class="stack">
@@ -956,13 +979,16 @@ function renderStage(){
       <button class="no">× 興味なし</button>
       <button class="yes">◎ 興味あり</button>
     </div>
-    <div class="hint">右スワイプ＝◎ ／ 左スワイプ＝× ／ タイトルタップで記事を開く</div>`;
+    <button class="super-btn" id="superBtn" ${superRemain<=0?"disabled":""}>⚡ スーパー気になる（本日残り${superRemain}/${SUPER_LIKE_LIMIT}）</button>
+    <div class="hint">右スワイプ＝◎ ／ 左スワイプ＝× ／ タイトルタップで記事を開く ／ ⚡は低マッチでも本気で推せる1日${SUPER_LIKE_LIMIT}回の特別枠</div>`;
   const top=st.querySelector(".dcard:not(.back)");
   attachSwipe(top);
   st.querySelector(".deck-acts .yes").onclick=()=>flyOut(top,true);
   st.querySelector(".deck-acts .no").onclick=()=>flyOut(top,false);
   const linkEl=top.querySelector("a");
   if(linkEl){ const artRef=deck[0]; linkEl.addEventListener("click",()=>{ artRef.opened=true; }); }
+  const sb=document.getElementById("superBtn");
+  if(sb) sb.onclick=()=>doSuperLike(top);
   const ub=document.getElementById("undoBtn");
   if(ub) ub.onclick=undoRate;
   const p = deck[0].pct ?? pct(deck[0].score);
@@ -1108,17 +1134,34 @@ function playMatchFx(card, p){
     if(flash) flash.remove();
   }, 2500);
 }
-function commitRate(like){
+function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+function superLikeRemaining(){
+  const day=todayStr();
+  if(!S.superLike || S.superLike.day!==day) return SUPER_LIKE_LIMIT;
+  return Math.max(0, SUPER_LIKE_LIMIT-(S.superLike.used||0));
+}
+// スーパー気になる: 低マッチでも「これは本当に気になる」を強く学習させる1日限定枠
+function doSuperLike(card){
+  if(!card || superLikeRemaining()<=0) return;
+  card.style.transition="transform .3s cubic-bezier(.34,1.56,.64,1), opacity .3s";
+  card.style.transform="translateY(-140vh) scale(1.05)";
+  const ov=card.querySelector(".ov.super");
+  if(ov) ov.style.opacity=1;
+  snd("super"); buzz([40,30,40,30,120]);
+  setTimeout(()=>commitRate(true,{superLike:true}),260);
+}
+function commitRate(like, opts={}){
   const a=deck[0]; if(!a) return;
-  const snap={a, like, popped:null, recAdded:false};
-  snap.lr=train(a.title, like);
+  const isSuper=!!opts.superLike;
+  const snap={a, like, popped:null, recAdded:false, superLike:isSuper};
+  snap.lr=train(a.title, like, isSuper?SUPER_LIKE_BOOST:1);
   S.rated[a.hash]=1;
   // 同一ストーリーとして束ねた記事も判定済みにする（学習は代表1回のみ）
   if(a.alts){ for(const d of a.alts) S.rated[d.hash]=1; snap.alts=a.alts; }
   if(like&&a.recFeed&&!S.feeds.some(f=>f.url===a.recFeed.url)&&!recLiked[a.recFeed.url]){
     recLiked[a.recFeed.url]=a.recFeed; snap.recAdded=true;
   }
-  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,pct:a.pct??pct(a.score),opened:!!a.opened}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
+  if(like){ S.saved.unshift({title:a.title,link:a.link,genre:a.genre,source:a.source,date:a.date,pct:a.pct??pct(a.score),opened:!!a.opened,superLike:isSuper}); if(S.saved.length>200) snap.popped=S.saved.pop(); }
   like?deckStats.yes++:deckStats.no++;
   S.genreStats=S.genreStats||{};
   const gs=S.genreStats[a.genre]||(S.genreStats[a.genre]={y:0,n:0});
@@ -1129,6 +1172,14 @@ function commitRate(like){
   S.stats.judges=(S.stats.judges||0)+1;
   deck.shift();
   lastRate=snap;
+
+  // ── スーパー気になる: 1日限定枠の消費 ──
+  if(isSuper){
+    const day=todayStr();
+    S.superLike=(S.superLike&&S.superLike.day===day)?S.superLike:{day,used:0};
+    S.superLike.used++;
+    unlock("first_super");
+  }
 
   // ── 実績判定 ──
   S.stats=S.stats||{streak:0,big:0,prem:0};
@@ -1148,7 +1199,7 @@ function commitRate(like){
 // 直前の判定を1段階だけ取り消す
 function undoRate(){
   if(!lastRate) return;
-  const {a, like, popped, recAdded, alts}=lastRate;
+  const {a, like, popped, recAdded, alts, superLike}=lastRate;
   untrain(a.title, like, lastRate.lr||1);
   delete S.rated[a.hash];
   if(alts) for(const d of alts) delete S.rated[d.hash];
@@ -1158,6 +1209,7 @@ function undoRate(){
     if(popped) S.saved.push(popped);
   }
   if(recAdded&&a.recFeed) delete recLiked[a.recFeed.url];
+  if(superLike && S.superLike) S.superLike.used=Math.max(0,S.superLike.used-1);
   const gs=(S.genreStats||{})[a.genre];
   if(gs){ if(like) gs.y=Math.max(0,gs.y-1); else gs.n=Math.max(0,gs.n-1); }
   if(like) deckStats.yes=Math.max(0,deckStats.yes-1); else deckStats.no=Math.max(0,deckStats.no-1);
@@ -1189,11 +1241,12 @@ function renderSaved(st){
   const list=indexed.length
     ? indexed.map(({a,i})=>{
       const r=rarityOf(a.pct);
+      const badge = a.superLike ? '<span class="rbadge super">⚡SUPER</span>' : `<span class="rbadge ${r.toLowerCase()}">${r}</span>`;
       return `
-    <div class="art ${r.toLowerCase()}${a.opened?" read":""}">
+    <div class="art ${a.superLike?"super":r.toLowerCase()}${a.opened?" read":""}">
       <div class="top">
         <div style="flex:1">
-          <a href="${esc(a.link)}" target="_blank" rel="noopener" data-i="${i}"><span class="rbadge ${r.toLowerCase()}">${r}</span>${esc(a.title)}</a>
+          <a href="${esc(a.link)}" target="_blank" rel="noopener" data-i="${i}">${badge}${esc(a.title)}</a>
           <div class="sub"><span class="genre">${a.genre}</span> ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}</div>
         </div>
         <button class="del" data-i="${i}">×</button>
@@ -1741,6 +1794,7 @@ document.addEventListener("keydown",e=>{
   if(!top) return;
   if(e.key==="ArrowRight"){ e.preventDefault(); flyOut(top,true); }
   else if(e.key==="ArrowLeft"){ e.preventDefault(); flyOut(top,false); }
+  else if(e.key==="ArrowUp"){ e.preventDefault(); doSuperLike(top); }
 });
 
 // ── init ──
