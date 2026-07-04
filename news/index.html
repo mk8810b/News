@@ -870,10 +870,13 @@ function starsHTML(p){
   return '<span class="stars max">★★★</span>';
 }
 function cardHTML(a, back){
+  // 学習ゼロの状態では全カードが50%になり「精度が低い」と誤解させるため、
+  // 数字を出さず学習中であることを正直に示す
+  const trained=(S.model.likeN+S.model.disN)>0;
   return `<div class="dcard ${back?"back":""}${back&&omenOf(a)?" reach":""}" data-h="${a.hash}">
     <div class="ov yes">◎ 興味あり</div>
     <div class="ov no">× 興味なし</div>
-    <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
+    <div class="score">${trained?`${a.pct??pct(a.score)}<small>MATCH</small>`:`—<small>学習中</small>`}</div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
     ${a.desc?`<div class="desc">${esc(a.desc)}</div>`:""}
     <div class="sub">${a.explore?'<span class="exp">🧭開拓</span> ':""}<span class="genre">${a.rec?"★":""}${a.genre}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}${a.alts&&a.alts.length?` ・ <span class="alt">他${a.alts.length}媒体でも報道</span>`:""}</div>
@@ -913,6 +916,13 @@ function renderStage(){
       });
       const rb=document.getElementById("recArt");
       if(rb) rb.onclick=()=>{ rb.disabled=true; rb.textContent="探索中…"; recommendArticles(); };
+      // 在庫切れで流れを止めない: デッキを使い切ったら自動でおすすめ探索を開始する
+      // （探索失敗時の再レンダリングでループしないよう2分間隔に制限）
+      if(rb && S.saved.length>=5 && Date.now()-autoRecTs>120000){
+        autoRecTs=Date.now();
+        rb.disabled=true; rb.textContent="自動探索中…";
+        recommendArticles();
+      }
       const ub=document.getElementById("undoBtn");
       if(ub) ub.onclick=undoRate;
     } else {
@@ -1376,6 +1386,7 @@ function renderAch(){
 
 // ── feed search & recommend ──
 const recLiked={};
+let autoRecTs=0;
 function topGenre(){
   const gs=S.genreStats||{}; let best=null, bv=-1;
   for(const g of GENRES){
