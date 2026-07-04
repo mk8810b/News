@@ -828,7 +828,27 @@ async function silentRefresh(){
 // ── deck ──
 function buildDeck(){
   const pool=articles.filter(a=>!S.rated[a.hash]&&!a.dupOf&&inGenre(a,activeGenre));
+  pool.forEach(a=>a.explore=false);
   deck=pool.slice(0,DECK_SIZE);
+  // 開拓枠: 学習が既知の好みへ寄るほど視野が狭まる（フィルターバブル）ため、
+  // 学習が進んだら(20判定以上)デッキ2枠を通常ランキング外から注入する。
+  // 判定実績の少ないジャンルを優先して選び、興味の地図を広げ続ける
+  if(judgeCount()>=20 && activeGenre==="すべて" && pool.length>DECK_SIZE+2){
+    const judged=g=>{ const st=(S.genreStats||{})[g]; return st?st.y+st.n:0; };
+    const rest=pool.slice(DECK_SIZE)
+      .map(a=>({a, v:1/(1+judged(a.genre))+Math.random()*0.3}))
+      .sort((x,y)=>y.v-x.v);
+    const picks=[], usedG=new Set();
+    for(const {a} of rest){
+      if(picks.length>=2) break;
+      if(usedG.has(a.genre)) continue;
+      usedG.add(a.genre); picks.push(a);
+    }
+    if(picks.length){
+      deck=deck.slice(0,DECK_SIZE-picks.length).concat(picks);
+      picks.forEach(a=>a.explore=true);
+    }
+  }
   // スコア順のままだと次のカードが読めてリーチ予告が成立しないため、デッキ内はランダム順
   for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
   deckStats={yes:0,no:0};
@@ -856,7 +876,7 @@ function cardHTML(a, back){
     <div class="score">${a.pct??pct(a.score)}<small>MATCH</small></div>
     <a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>
     ${a.desc?`<div class="desc">${esc(a.desc)}</div>`:""}
-    <div class="sub"><span class="genre">${a.rec?"★":""}${a.genre}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}${a.alts&&a.alts.length?` ・ <span class="alt">他${a.alts.length}媒体でも報道</span>`:""}</div>
+    <div class="sub">${a.explore?'<span class="exp">🧭開拓</span> ':""}<span class="genre">${a.rec?"★":""}${a.genre}</span>${starsHTML(a.pct??pct(a.score))} ・ ${esc(a.source)}${a.date?" ・ "+a.date:""}${a.alts&&a.alts.length?` ・ <span class="alt">他${a.alts.length}媒体でも報道</span>`:""}</div>
   </div>`;
 }
 function renderStage(){
